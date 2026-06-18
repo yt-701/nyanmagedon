@@ -1,15 +1,23 @@
-import kaplay from "kaplay";
-import { titleScene } from "./scenes/titleScene";
-import { gameScene } from "./scenes/gameScene";
+import './styles.css';
+import { createTitleScene } from './scenes/titleScene';
+import { createGameScene } from './scenes/gameScene';
 
-const k = kaplay({
-  width: 960,
-  height: 540,
-  letterbox: true,
-  background: [10, 8, 20],
-});
+const container = document.createElement('div');
+container.id = 'nyan-container';
+document.body.appendChild(container);
 
-k.scene("title", () => titleScene(k));
-k.scene("game", () => gameScene(k));
+let stopCurrent: (() => void) | null = null;
 
-k.go("title");
+function goTitle() {
+  stopCurrent?.();
+  container.innerHTML = '';
+  stopCurrent = createTitleScene(container, goGame);
+}
+
+function goGame() {
+  stopCurrent?.();
+  container.innerHTML = '';
+  stopCurrent = createGameScene(container, goTitle);
+}
+
+goTitle();

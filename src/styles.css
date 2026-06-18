@@ -1,0 +1,261 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #000;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  font-family: 'Hiragino Kaku Gothic ProN','Hiragino Sans','Noto Sans JP','Yu Gothic UI',system-ui,sans-serif;
+}
+
+#nyan-container {
+  position: relative;
+  width: 960px;
+  height: 540px;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: 0 0 80px rgba(0,0,0,0.9);
+}
+
+#nyan-container canvas {
+  position: absolute;
+  top: 0; left: 0;
+  display: block;
+}
+
+/* ── HUD ───────────────────────────── */
+#nyan-hud {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 58px;
+  background: rgba(6,3,18,0.90);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  gap: 16px;
+  z-index: 20;
+  pointer-events: none;
+}
+#nyan-hud button { pointer-events: auto; }
+
+.nyan-stat { display: flex; flex-direction: column; gap: 4px; }
+.nyan-stat-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.35); text-transform: uppercase;
+}
+.nyan-stat-value { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.7); }
+
+.nyan-bar-wrap {
+  width: 138px; height: 8px;
+  background: rgba(255,255,255,0.09);
+  border-radius: 4px; overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.4);
+}
+.nyan-bar-fill {
+  height: 100%; border-radius: 4px;
+  transition: width 0.4s cubic-bezier(0.22,1,0.36,1);
+  position: relative;
+}
+.nyan-bar-fill::after {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 40%; background: rgba(255,255,255,0.25);
+  border-radius: 4px 4px 0 0;
+}
+.hp-fill { background: linear-gradient(90deg, #ff416c, #ff4b2b); }
+.mp-fill { background: linear-gradient(90deg, #4776e6, #8e54e9); }
+
+.nyan-divider { width: 1px; height: 36px; background: rgba(255,255,255,0.07); flex-shrink: 0; }
+
+.nyan-turn-block { text-align: center; }
+.nyan-turn-num {
+  font-size: 28px; font-weight: 900; color: #fbbf24; line-height: 1;
+  text-shadow: 0 0 20px rgba(251,191,36,0.55);
+}
+.nyan-turn-lbl { font-size: 8px; color: rgba(255,255,255,0.3); letter-spacing: 0.14em; text-transform: uppercase; }
+
+.nyan-score-block { text-align: center; }
+.nyan-score-num { font-size: 20px; font-weight: 800; color: #4ade80; }
+.nyan-score-lbl { font-size: 8px; color: rgba(255,255,255,0.3); letter-spacing: 0.1em; text-transform: uppercase; }
+
+.nyan-effects { display: flex; gap: 6px; align-items: center; flex: 1; }
+.nyan-chip {
+  padding: 3px 9px; border-radius: 20px;
+  font-size: 9px; font-weight: 700; border: 1px solid currentColor;
+}
+.chip-shield { color: #38bdf8; background: rgba(56,189,248,0.12); }
+.chip-other  { color: #86efac; background: rgba(134,239,172,0.12); }
+
+#nyan-end-turn {
+  margin-left: auto;
+  padding: 9px 22px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none; border-radius: 10px;
+  color: #fff; font-size: 13px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+  box-shadow: 0 4px 18px rgba(118,75,162,0.45);
+  transition: transform 0.18s cubic-bezier(.34,1.56,.64,1), box-shadow 0.18s;
+  letter-spacing: 0.03em; white-space: nowrap; flex-shrink: 0;
+}
+#nyan-end-turn:hover  { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(118,75,162,0.65); }
+#nyan-end-turn:active { transform: translateY(0); }
+
+/* ── CARD AREA ──────────────────────── */
+#nyan-card-area {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 195px;
+  background: linear-gradient(to top, rgba(4,2,12,0.97) 78%, transparent);
+  z-index: 20;
+  display: flex; flex-direction: column;
+  padding: 0 20px 14px;
+  pointer-events: none;
+}
+.nyan-card { pointer-events: auto; }
+
+.nyan-ca-header {
+  font-size: 10px; color: rgba(255,255,255,0.2);
+  padding: 7px 0 5px;
+}
+.nyan-cards-row {
+  display: flex; gap: 12px;
+  justify-content: center; align-items: flex-end; flex: 1;
+}
+
+/* ── CARD ────────────────────────────── */
+.nyan-card {
+  width: 108px; height: 156px;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.55);
+  border: 2px solid rgba(255,255,255,0.5);
+  cursor: pointer;
+  transition:
+    transform 0.22s cubic-bezier(.34,1.56,.64,1),
+    box-shadow 0.22s,
+    border-color 0.15s;
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column;
+  flex-shrink: 0; user-select: none;
+}
+.nyan-card:hover:not(.cant-afford) {
+  transform: translateY(-16px) scale(1.04);
+  box-shadow: 0 20px 44px rgba(0,0,0,0.6);
+}
+.nyan-card.selected {
+  transform: translateY(-26px) scale(1.07) !important;
+  border-color: #ffd700 !important;
+  box-shadow:
+    0 0 0 3px rgba(255,215,0,0.7),
+    0 0 32px rgba(255,215,0,0.4),
+    0 22px 50px rgba(0,0,0,0.55) !important;
+}
+.nyan-card.cant-afford {
+  filter: grayscale(70%) brightness(0.45);
+  cursor: not-allowed;
+}
+
+.nyan-card-art {
+  height: 82px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 38px; flex-shrink: 0; position: relative;
+}
+.nyan-card-art::after {
+  content: ''; position: absolute;
+  bottom: 0; left: 0; right: 0; height: 28px;
+  background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.15));
+}
+.nyan-card-art.attack  { background: linear-gradient(135deg, #ff416c, #ff4b2b); }
+.nyan-card-art.defense { background: linear-gradient(135deg, #4776e6, #8e54e9); }
+.nyan-card-art.utility { background: linear-gradient(135deg, #11998e, #38ef7d); }
+
+.nyan-card-body {
+  flex: 1; padding: 7px 9px 5px;
+  display: flex; flex-direction: column; gap: 3px;
+  background: #fff;
+}
+.nyan-card-name { font-size: 10px; font-weight: 800; color: #1a1030; line-height: 1.2; }
+.nyan-card-desc { font-size: 8px; color: #5a4e7a; line-height: 1.38; }
+
+.nyan-card-cost {
+  position: absolute; top: 6px; right: 6px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff; font-size: 12px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.35);
+  border: 1.5px solid rgba(255,255,255,0.45);
+  z-index: 2;
+}
+
+/* ── TITLE ──────────────────────────── */
+#nyan-title-ui {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 20; gap: 10px;
+}
+.nyan-game-title {
+  font-size: 70px; font-weight: 900; letter-spacing: -0.02em; line-height: 1;
+  background: linear-gradient(135deg, #fde68a 0%, #f97316 40%, #ec4899 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  filter: drop-shadow(0 0 35px rgba(249,115,22,0.55));
+}
+.nyan-title-sub {
+  font-size: 17px; color: rgba(255,255,255,0.65); letter-spacing: 0.1em; margin-bottom: 4px;
+}
+.nyan-start-btn {
+  margin-top: 16px; padding: 14px 44px;
+  font-size: 17px; font-weight: 800; letter-spacing: 0.05em;
+  background: linear-gradient(135deg, #f97316, #ec4899);
+  border: none; border-radius: 50px; color: #fff;
+  cursor: pointer; font-family: inherit;
+  box-shadow: 0 8px 32px rgba(236,72,153,0.5);
+  transition: transform 0.2s cubic-bezier(.34,1.56,.64,1), box-shadow 0.2s;
+  animation: nyan-pulse 2.2s ease infinite;
+}
+.nyan-start-btn:hover { transform: scale(1.1); box-shadow: 0 14px 44px rgba(236,72,153,0.7); }
+@keyframes nyan-pulse {
+  0%,100% { box-shadow: 0 8px 32px rgba(236,72,153,0.5), 0 0 0 0 rgba(249,115,22,0.35); }
+  55%      { box-shadow: 0 8px 32px rgba(236,72,153,0.5), 0 0 0 14px rgba(249,115,22,0); }
+}
+.nyan-hint { font-size: 11.5px; color: rgba(255,255,255,0.25); letter-spacing: 0.04em; margin-top: 8px; }
+
+/* ── GAME OVER ───────────────────────── */
+#nyan-gameover {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.82);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 30; gap: 18px;
+}
+.nyan-go-title {
+  font-size: 66px; font-weight: 900;
+  background: linear-gradient(135deg, #ff416c, #ff4b2b);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  filter: drop-shadow(0 0 24px rgba(255,65,108,0.6));
+}
+.nyan-go-score { font-size: 30px; font-weight: 800; color: #fbbf24; }
+.nyan-go-restart {
+  padding: 13px 38px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border: none; border-radius: 50px; color: #fff;
+  font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit;
+  box-shadow: 0 6px 22px rgba(118,75,162,0.55);
+  transition: transform 0.18s cubic-bezier(.34,1.56,.64,1);
+}
+.nyan-go-restart:hover { transform: scale(1.08); }
+
+/* ── FLASH ──────────────────────────── */
+#nyan-flash {
+  position: absolute; inset: 0;
+  background: rgba(255,255,255,0);
+  pointer-events: none; z-index: 28;
+  transition: background 0.06s;
+}
