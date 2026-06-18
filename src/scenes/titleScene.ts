@@ -1,3 +1,5 @@
+import type { RoomPlayer } from '../room/roomTypes';
+import { getAvatar, genPlayerId, getSavedName, saveName, genRoomCode } from '../room/utils';
 import { CARD_DEFS } from '../cards/cardDefs';
 
 interface Star { x: number; y: number; r: number; phase: number; speed: number }
@@ -98,104 +100,115 @@ function drawTitleBg(
   ctx.restore();
 }
 
-// ── Room code generator ──────────────────────────────────────────────
-
-function genRoomCode(): string {
-  return Array.from({ length: 6 }, () =>
-    'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]
-  ).join('');
-}
-
-// ── Modal builders ───────────────────────────────────────────────────
+// ── Modal helpers ────────────────────────────────────────────────────
 
 function makeModal(container: HTMLElement, content: string): HTMLElement {
   const overlay = document.createElement('div');
   overlay.className = 'nt-overlay';
   overlay.innerHTML = `<div class="nt-modal">${content}</div>`;
   container.appendChild(overlay);
-  // Click backdrop to close
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   return overlay;
 }
 
-function openCreateRoom(container: HTMLElement, onStart: () => void): void {
-  const code = genRoomCode();
+function nameInputHtml(defaultName: string): string {
+  return `
+    <div class="nt-field">
+      <label class="nt-field-label">あなたのニックネーム</label>
+      <input class="nt-name-input" id="nt-name-input"
+        maxlength="12" value="${defaultName}" autocomplete="off" />
+    </div>
+  `;
+}
+
+function readName(overlay: HTMLElement): string {
+  const val = (overlay.querySelector('#nt-name-input') as HTMLInputElement)?.value.trim();
+  const name = val || getSavedName();
+  saveName(name);
+  return name;
+}
+
+// ── Modals ────────────────────────────────────────────────────────────
+
+function openCreateRoom(
+  container: HTMLElement,
+  onRoom: (code: string, me: RoomPlayer, isCreator: boolean) => void,
+): void {
   const overlay = makeModal(container, `
-    <button class="nt-close" aria-label="close">✕</button>
+    <button class="nt-close">✕</button>
     <div class="nt-modal-icon">🏠</div>
     <h2 class="nt-modal-title">ルーム作成</h2>
-    <p class="nt-modal-desc">あなたのルームコードを友達にシェアしよう！</p>
-    <div class="nt-room-code-display">
-      <span class="nt-code-label">ROOM CODE</span>
-      <span class="nt-code-value" id="nt-code">${code}</span>
-      <button class="nt-copy-btn" id="nt-copy-btn" title="コピー">📋</button>
-    </div>
-    <p class="nt-modal-note">※ 現在はシングルプレイヤーモードで開始します</p>
+    <p class="nt-modal-desc">ニックネームを決めて部屋を作ろう</p>
+    ${nameInputHtml(getSavedName())}
+    <p class="nt-modal-note">※ 同じブラウザの別タブでルームコードを入力すると参加できます</p>
     <div class="nt-modal-actions">
-      <button class="nt-action-btn nt-action-btn--primary" id="nt-create-start">
-        ゲームスタート ▶
+      <button class="nt-action-btn nt-action-btn--primary" id="nt-create-go">
+        部屋を作る 🏠
       </button>
     </div>
   `);
-
-  overlay.querySelector('.nt-close')!.addEventListener('click', () => overlay.remove());
-  overlay.querySelector('#nt-create-start')!.addEventListener('click', () => {
+  (overlay.querySelector('.nt-close') as HTMLElement).onclick = () => overlay.remove();
+  (overlay.querySelector('#nt-create-go') as HTMLButtonElement).onclick = () => {
+    const name = readName(overlay);
+    const id   = genPlayerId();
+    const code = genRoomCode();
+    const me: RoomPlayer = {
+      id, name, role: 'fighter', joinedAt: Date.now(), isHost: true, avatar: getAvatar(id),
+    };
     overlay.remove();
-    onStart();
-  });
-  overlay.querySelector('#nt-copy-btn')!.addEventListener('click', async () => {
-    await navigator.clipboard.writeText(code).catch(() => {});
-    const btn = overlay.querySelector('#nt-copy-btn') as HTMLButtonElement;
-    btn.textContent = '✅'; setTimeout(() => { btn.textContent = '📋'; }, 1200);
-  });
+    onRoom(code, me, true);
+  };
+  setTimeout(() => (overlay.querySelector('#nt-name-input') as HTMLInputElement)?.select(), 60);
 }
 
-function openJoinRoom(container: HTMLElement, onStart: () => void): void {
+function openJoinRoom(
+  container: HTMLElement,
+  onRoom: (code: string, me: RoomPlayer, isCreator: boolean) => void,
+): void {
   const overlay = makeModal(container, `
-    <button class="nt-close" aria-label="close">✕</button>
+    <button class="nt-close">✕</button>
     <div class="nt-modal-icon">🚪</div>
     <h2 class="nt-modal-title">ルーム参加</h2>
-    <p class="nt-modal-desc">ルームコードを入力してください</p>
-    <div class="nt-room-input-wrap">
-      <input
-        class="nt-room-input"
-        id="nt-room-input"
-        maxlength="6"
-        placeholder="例: ABC123"
-        autocomplete="off"
-        spellcheck="false"
-      />
+    <p class="nt-modal-desc">ニックネームとルームコードを入力</p>
+    ${nameInputHtml(getSavedName())}
+    <div class="nt-field">
+      <label class="nt-field-label">ルームコード</label>
+      <input class="nt-room-input" id="nt-room-input"
+        maxlength="6" placeholder="例：ABC123"
+        autocomplete="off" spellcheck="false" />
     </div>
-    <p class="nt-input-hint" id="nt-input-hint">6文字のコードを入力</p>
-    <p class="nt-modal-note">※ 現在はシングルプレイヤーモードで参加します</p>
+    <p class="nt-input-hint" id="nt-input-hint">6文字のコードを入力してください</p>
     <div class="nt-modal-actions">
-      <button class="nt-action-btn nt-action-btn--secondary" id="nt-join-start" disabled>
+      <button class="nt-action-btn nt-action-btn--secondary" id="nt-join-go" disabled>
         参加する ▶
       </button>
     </div>
   `);
 
-  const input = overlay.querySelector('#nt-room-input') as HTMLInputElement;
-  const btn   = overlay.querySelector('#nt-join-start') as HTMLButtonElement;
-  const hint  = overlay.querySelector('#nt-input-hint') as HTMLElement;
+  const codeInput = overlay.querySelector('#nt-room-input') as HTMLInputElement;
+  const joinBtn   = overlay.querySelector('#nt-join-go')   as HTMLButtonElement;
+  const hint      = overlay.querySelector('#nt-input-hint') as HTMLElement;
 
-  input.addEventListener('input', () => {
-    const v = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-    input.value = v;
-    btn.disabled = v.length < 6;
+  codeInput.addEventListener('input', () => {
+    const v = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    codeInput.value = v;
+    joinBtn.disabled = v.length < 6;
     hint.textContent = v.length < 6 ? `${v.length} / 6 文字` : '✓ 入力完了！';
     hint.style.color = v.length === 6 ? '#4ade80' : '';
   });
 
-  overlay.querySelector('.nt-close')!.addEventListener('click', () => overlay.remove());
-  btn.addEventListener('click', () => {
+  (overlay.querySelector('.nt-close') as HTMLElement).onclick = () => overlay.remove();
+  joinBtn.onclick = () => {
+    const name = readName(overlay);
+    const code = codeInput.value.trim().toUpperCase();
+    const id   = genPlayerId();
+    const me: RoomPlayer = {
+      id, name, role: 'spectator', joinedAt: Date.now(), isHost: false, avatar: getAvatar(id),
+    };
     overlay.remove();
-    onStart();
-  });
-
-  setTimeout(() => input.focus(), 80);
+    onRoom(code, me, false);
+  };
+  setTimeout(() => (overlay.querySelector('#nt-name-input') as HTMLInputElement)?.select(), 60);
 }
 
 function openSkillList(container: HTMLElement): void {
@@ -218,19 +231,21 @@ function openSkillList(container: HTMLElement): void {
   `).join('');
 
   const overlay = makeModal(container, `
-    <button class="nt-close" aria-label="close">✕</button>
+    <button class="nt-close">✕</button>
     <div class="nt-modal-icon">📋</div>
     <h2 class="nt-modal-title">スキル一覧</h2>
     <p class="nt-modal-desc">現在使用できるカード — 全 ${cards.length} 種</p>
     <div class="nt-skill-grid">${cardHtml}</div>
   `);
-
-  overlay.querySelector('.nt-close')!.addEventListener('click', () => overlay.remove());
+  (overlay.querySelector('.nt-close') as HTMLElement).onclick = () => overlay.remove();
 }
 
-// ── Title scene ──────────────────────────────────────────────────────
+// ── Title scene ────────────────────────────────────────────────────────
 
-export function createTitleScene(container: HTMLElement, onStart: () => void): () => void {
+export function createTitleScene(
+  container: HTMLElement,
+  onRoom: (code: string, me: RoomPlayer, isCreator: boolean) => void,
+): () => void {
   const W = 960, H = 540;
 
   const canvas = document.createElement('canvas');
@@ -279,8 +294,8 @@ export function createTitleScene(container: HTMLElement, onStart: () => void): (
   `;
   container.appendChild(ui);
 
-  ui.querySelector('#nt-btn-create')!.addEventListener('click', () => openCreateRoom(container, onStart));
-  ui.querySelector('#nt-btn-join')!.addEventListener('click',   () => openJoinRoom(container, onStart));
+  ui.querySelector('#nt-btn-create')!.addEventListener('click', () => openCreateRoom(container, onRoom));
+  ui.querySelector('#nt-btn-join')!.addEventListener('click',   () => openJoinRoom(container, onRoom));
   ui.querySelector('#nt-btn-skills')!.addEventListener('click', () => openSkillList(container));
 
   const stars: Star[] = Array.from({ length: 180 }, () => ({
