@@ -198,8 +198,9 @@ body {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  z-index: 20; gap: 10px;
+  z-index: 20; gap: 14px;
 }
+.nt-header { text-align: center; }
 .nyan-game-title {
   font-size: 70px; font-weight: 900; letter-spacing: -0.02em; line-height: 1;
   background: linear-gradient(135deg, #fde68a 0%, #f97316 40%, #ec4899 100%);
@@ -207,24 +208,215 @@ body {
   filter: drop-shadow(0 0 35px rgba(249,115,22,0.55));
 }
 .nyan-title-sub {
-  font-size: 17px; color: rgba(255,255,255,0.65); letter-spacing: 0.1em; margin-bottom: 4px;
+  font-size: 15px; color: rgba(255,255,255,0.55); letter-spacing: 0.12em; margin-top: 2px;
 }
-.nyan-start-btn {
-  margin-top: 16px; padding: 14px 44px;
-  font-size: 17px; font-weight: 800; letter-spacing: 0.05em;
-  background: linear-gradient(135deg, #f97316, #ec4899);
-  border: none; border-radius: 50px; color: #fff;
+.nyan-hint { font-size: 10.5px; color: rgba(255,255,255,0.2); letter-spacing: 0.04em; }
+
+/* ── TITLE MENU BUTTONS ─────────────── */
+.nt-menu {
+  display: flex; flex-direction: column; gap: 10px; width: 340px;
+  margin-top: 6px;
+}
+.nt-menu-btn {
+  display: flex; align-items: center; gap: 14px;
+  padding: 13px 18px 13px 16px;
+  border: none; border-radius: 16px; cursor: pointer;
+  font-family: inherit; text-align: left; width: 100%;
+  transition: transform 0.2s cubic-bezier(.34,1.56,.64,1), box-shadow 0.2s, filter 0.15s;
+  position: relative; overflow: hidden;
+}
+.nt-menu-btn::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: rgba(255,255,255,0);
+  transition: background 0.15s;
+}
+.nt-menu-btn:hover::before { background: rgba(255,255,255,0.07); }
+.nt-menu-btn:hover  { transform: translateX(6px) scale(1.02); }
+.nt-menu-btn:active { transform: translateX(2px) scale(0.99); }
+
+.nt-menu-btn--create {
+  background: linear-gradient(135deg, #f97316 0%, #ec4899 100%);
+  box-shadow: 0 6px 28px rgba(249,115,22,0.4);
+}
+.nt-menu-btn--join {
+  background: linear-gradient(135deg, #4776e6 0%, #8e54e9 100%);
+  box-shadow: 0 6px 28px rgba(71,118,230,0.4);
+}
+.nt-menu-btn--skills {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  box-shadow: 0 6px 28px rgba(17,153,142,0.4);
+}
+
+.nt-btn-icon { font-size: 28px; flex-shrink: 0; line-height: 1; }
+.nt-btn-content { display: flex; flex-direction: column; flex: 1; gap: 2px; }
+.nt-btn-label {
+  font-size: 16px; font-weight: 800; color: #fff;
+  letter-spacing: 0.03em; line-height: 1;
+}
+.nt-btn-sub { font-size: 10px; color: rgba(255,255,255,0.7); font-weight: 500; }
+.nt-btn-arrow {
+  font-size: 22px; color: rgba(255,255,255,0.6); flex-shrink: 0;
+  transition: transform 0.2s;
+}
+.nt-menu-btn:hover .nt-btn-arrow { transform: translateX(3px); }
+
+/* ── MODAL OVERLAY ──────────────────── */
+.nt-overlay {
+  position: absolute; inset: 0; z-index: 40;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  display: flex; align-items: center; justify-content: center;
+  animation: nt-fade-in 0.18s ease;
+}
+@keyframes nt-fade-in {
+  from { opacity: 0; } to { opacity: 1; }
+}
+
+.nt-modal {
+  position: relative;
+  background: linear-gradient(160deg, rgba(30,12,60,0.98) 0%, rgba(12,6,30,0.98) 100%);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 24px;
+  padding: 36px 40px 32px;
+  width: 420px;
+  box-shadow: 0 32px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.04);
+  animation: nt-slide-up 0.22s cubic-bezier(.34,1.56,.64,1);
+  text-align: center;
+}
+@keyframes nt-slide-up {
+  from { transform: translateY(24px) scale(0.96); opacity: 0; }
+  to   { transform: translateY(0)    scale(1);    opacity: 1; }
+}
+
+.nt-close {
+  position: absolute; top: 14px; right: 16px;
+  background: rgba(255,255,255,0.08); border: none;
+  color: rgba(255,255,255,0.5); font-size: 14px;
+  width: 30px; height: 30px; border-radius: 50%;
   cursor: pointer; font-family: inherit;
-  box-shadow: 0 8px 32px rgba(236,72,153,0.5);
-  transition: transform 0.2s cubic-bezier(.34,1.56,.64,1), box-shadow 0.2s;
-  animation: nyan-pulse 2.2s ease infinite;
+  transition: background 0.15s, color 0.15s;
+  display: flex; align-items: center; justify-content: center;
 }
-.nyan-start-btn:hover { transform: scale(1.1); box-shadow: 0 14px 44px rgba(236,72,153,0.7); }
-@keyframes nyan-pulse {
-  0%,100% { box-shadow: 0 8px 32px rgba(236,72,153,0.5), 0 0 0 0 rgba(249,115,22,0.35); }
-  55%      { box-shadow: 0 8px 32px rgba(236,72,153,0.5), 0 0 0 14px rgba(249,115,22,0); }
+.nt-close:hover { background: rgba(255,255,255,0.14); color: #fff; }
+
+.nt-modal-icon { font-size: 42px; margin-bottom: 8px; }
+.nt-modal-title {
+  font-size: 26px; font-weight: 900; color: #fff; margin-bottom: 6px;
+  letter-spacing: -0.01em;
 }
-.nyan-hint { font-size: 11.5px; color: rgba(255,255,255,0.25); letter-spacing: 0.04em; margin-top: 8px; }
+.nt-modal-desc { font-size: 13px; color: rgba(255,255,255,0.45); margin-bottom: 22px; }
+.nt-modal-note { font-size: 10px; color: rgba(255,255,255,0.25); margin-top: 14px; }
+
+/* Room code display */
+.nt-room-code-display {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px; padding: 16px 20px;
+  display: flex; align-items: center; gap: 10px;
+}
+.nt-code-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.14em;
+  color: rgba(255,255,255,0.3); text-transform: uppercase; flex-shrink: 0;
+}
+.nt-code-value {
+  flex: 1; font-size: 30px; font-weight: 900; letter-spacing: 0.1em;
+  color: #fbbf24; text-shadow: 0 0 22px rgba(251,191,36,0.5);
+  text-align: center;
+}
+.nt-copy-btn {
+  background: rgba(255,255,255,0.08); border: none; border-radius: 8px;
+  font-size: 18px; width: 36px; height: 36px; cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.nt-copy-btn:hover { background: rgba(255,255,255,0.15); transform: scale(1.1); }
+
+/* Room input */
+.nt-room-input-wrap { margin-bottom: 8px; }
+.nt-room-input {
+  width: 100%; padding: 16px 20px;
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(255,255,255,0.12);
+  border-radius: 14px; color: #fbbf24;
+  font-size: 28px; font-weight: 900; letter-spacing: 0.15em;
+  text-align: center; font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+.nt-room-input::placeholder { color: rgba(255,255,255,0.2); font-size: 18px; letter-spacing: 0.05em; }
+.nt-room-input:focus {
+  border-color: rgba(71,118,230,0.6);
+  box-shadow: 0 0 0 3px rgba(71,118,230,0.15);
+}
+.nt-input-hint { font-size: 11px; color: rgba(255,255,255,0.3); margin-bottom: 0; transition: color 0.2s; }
+
+/* Action buttons */
+.nt-modal-actions { margin-top: 20px; }
+.nt-action-btn {
+  width: 100%; padding: 14px 20px;
+  border: none; border-radius: 14px;
+  font-size: 15px; font-weight: 800; letter-spacing: 0.04em;
+  cursor: pointer; font-family: inherit; color: #fff;
+  transition: transform 0.18s cubic-bezier(.34,1.56,.64,1), box-shadow 0.18s, opacity 0.15s;
+}
+.nt-action-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none !important; }
+.nt-action-btn:not(:disabled):hover { transform: translateY(-3px); }
+.nt-action-btn--primary {
+  background: linear-gradient(135deg, #f97316, #ec4899);
+  box-shadow: 0 6px 24px rgba(249,115,22,0.4);
+}
+.nt-action-btn--primary:not(:disabled):hover { box-shadow: 0 10px 32px rgba(249,115,22,0.6); }
+.nt-action-btn--secondary {
+  background: linear-gradient(135deg, #4776e6, #8e54e9);
+  box-shadow: 0 6px 24px rgba(71,118,230,0.4);
+}
+.nt-action-btn--secondary:not(:disabled):hover { box-shadow: 0 10px 32px rgba(71,118,230,0.6); }
+
+/* ── SKILL LIST ─────────────────────── */
+.nt-modal:has(.nt-skill-grid) { width: 640px; }
+.nt-skill-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  margin-top: 4px; max-height: 310px; overflow-y: auto;
+  padding: 2px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.nt-skill-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px; overflow: hidden;
+  transition: transform 0.18s cubic-bezier(.34,1.56,.64,1), border-color 0.15s;
+}
+.nt-skill-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255,255,255,0.18);
+}
+.nt-skill-art {
+  height: 64px; display: flex; align-items: center; justify-content: center;
+  font-size: 30px;
+}
+.nt-skill-art.attack  { background: linear-gradient(135deg, #ff416c, #ff4b2b); }
+.nt-skill-art.defense { background: linear-gradient(135deg, #4776e6, #8e54e9); }
+.nt-skill-art.utility { background: linear-gradient(135deg, #11998e, #38ef7d); }
+.nt-skill-body { padding: 10px 10px 10px; }
+.nt-skill-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 4px; margin-bottom: 5px; }
+.nt-skill-name { font-size: 11px; font-weight: 800; color: #fff; line-height: 1.3; }
+.nt-skill-type-badge {
+  font-size: 7px; font-weight: 700; letter-spacing: 0.05em;
+  padding: 2px 6px; border-radius: 20px; white-space: nowrap; flex-shrink: 0;
+}
+.nt-badge--attack  { background: rgba(255,65,108,0.2); color: #ff9db5; border: 1px solid rgba(255,65,108,0.3); }
+.nt-badge--defense { background: rgba(71,118,230,0.2); color: #99b8f5; border: 1px solid rgba(71,118,230,0.3); }
+.nt-badge--utility { background: rgba(17,153,142,0.2); color: #6ee7db; border: 1px solid rgba(17,153,142,0.3); }
+.nt-skill-desc { font-size: 9px; color: rgba(255,255,255,0.45); line-height: 1.5; margin-bottom: 8px; }
+.nt-skill-cost {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.35);
+}
+.nt-cost-gem {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  display: inline-block; box-shadow: 0 1px 4px rgba(118,75,162,0.5);
+}
 
 /* ── GAME OVER ───────────────────────── */
 #nyan-gameover {
