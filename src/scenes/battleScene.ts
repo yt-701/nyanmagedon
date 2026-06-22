@@ -230,7 +230,7 @@ function drawEnergyBar(ctx: CanvasRenderingContext2D, cx: number, energy: number
   ctx.beginPath(); ctx.roundRect(bx, by, bw * pct, 5, 2.5); ctx.fill();
   ctx.fillStyle = 'rgba(255,220,100,0.8)';
   ctx.font = '8px system-ui,sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText(`⚡ ${energy.toFixed(1)}`, cx, by - 3);
+  ctx.fillText(`⚡ ${(energy / maxEnergy * 100).toFixed(1)}`, cx, by - 3);
 }
 
 // ── Power meter (above active tank when charging) ─────────────────────
@@ -425,7 +425,7 @@ function updateUI(
     showPanel('bt-panel-normal');
     // Energy bar
     setW('bt-energy-bar', `${myTank.energy / myTank.maxEnergy * 100}%`);
-    set('bt-energy-txt', `${myTank.energy.toFixed(1)}/${myTank.maxEnergy}`);
+    set('bt-energy-txt', `${(myTank.energy / myTank.maxEnergy * 100).toFixed(1)}/100`);
     // Disable move buttons if no energy
     const canMove = myTank.energy > 0.5;
     (document.getElementById('bt-left')  as HTMLButtonElement).disabled = !canMove;

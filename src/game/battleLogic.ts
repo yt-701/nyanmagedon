@@ -28,7 +28,7 @@ export function createInitialState(info: GameStartInfo): BattleState {
   const mkTank = (p: { id: string; name: string }, x: number, facing: 1 | -1): TankState => ({
     playerId: p.id, name: p.name,
     x, hp: 100, maxHp: 100,
-    energy: 400, maxEnergy: 400,
+    energy: 300, maxEnergy: 300,
     facing,
     hand: [...STARTER_HAND],
     effects: [],
