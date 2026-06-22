@@ -1,7 +1,7 @@
 import type { BattleState, GameStartInfo, TankState, Projectile } from '../game/gameTypes';
 import {
   GROUND_Y, createInitialState, opponentId, CPU_PLAYER_ID,
-  applyMoveContinuous, applyFire, applyUseSkill, applyEndTurn,
+  applyMoveContinuous, applyFacingChange, applyFire, applyUseSkill, applyEndTurn,
   tickProjectile, applyDamage,
 } from '../game/battleLogic';
 import { SKILL_DEFS } from '../game/skillDefs';
@@ -331,6 +331,7 @@ function buildBottomBar(container: HTMLElement): HTMLElement {
       <div class="bt-action-row">
         <button class="bt-btn bt-btn--move" id="bt-left">◀ 左移動</button>
         <button class="bt-btn bt-btn--move" id="bt-right">右移動 ▶</button>
+        <button class="bt-btn bt-btn--face" id="bt-face">↩ 向き変更</button>
         <button class="bt-btn bt-btn--shoot" id="bt-shoot">🎯 砲撃</button>
         <div class="bt-skills-row" id="bt-skills"></div>
         <button class="bt-btn bt-btn--end" id="bt-end-turn">ターン終了</button>
@@ -542,6 +543,12 @@ export function createBattleScene(
   });
 
   // ── Action handlers ───────────────────────────────────────────────
+  function onFacingChange() {
+    if (!isMyTurn() || state.phase !== 'pre_shot') return;
+    state = applyFacingChange(state);
+    channel.send({ type: 'SYNC', state });
+  }
+
   function onShoot() {
     if (!isMyTurn() || state.phase !== 'pre_shot') return;
     state = { ...state, phase: 'charging' };
@@ -599,6 +606,7 @@ export function createBattleScene(
   document.addEventListener('pointerup',   stopMove);
   document.addEventListener('pointercancel', stopMove);
 
+  document.getElementById('bt-face')?.addEventListener('click', onFacingChange);
   document.getElementById('bt-shoot')?.addEventListener('click', onShoot);
   document.getElementById('bt-fire')?.addEventListener('click', onFire);
   document.getElementById('bt-cancel')?.addEventListener('click', onCancel);

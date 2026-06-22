@@ -67,16 +67,6 @@ function log(state: BattleState, msg: string): BattleState {
   return { ...state, log: [...state.log.slice(-19), msg] };
 }
 
-// Update tank facing based on relative position to opponent
-function refreshFacing(state: BattleState): BattleState {
-  const [p1id, p2id] = state.playerOrder;
-  const t1 = state.tanks[p1id], t2 = state.tanks[p2id];
-  let s = state;
-  s = updateTank(s, p1id, { facing: t1.x <= t2.x ?  1 : -1 });
-  s = updateTank(s, p2id, { facing: t2.x <= t1.x ? -1 :  1 });
-  return s;
-}
-
 // ── Move (continuous, call each frame while button is held) ──────────
 
 export function applyMoveContinuous(
@@ -93,8 +83,18 @@ export function applyMoveContinuous(
   const newX       = Math.max(FIELD_MIN_X, Math.min(FIELD_MAX_X, tank.x + dx));
   const newEnergy  = Math.max(0, tank.energy - actualCost);
 
-  let s = updateTank(state, id, { x: newX, energy: newEnergy });
-  s = refreshFacing(s);
+  return updateTank(state, id, { x: newX, energy: newEnergy });
+}
+
+// ── Facing change ─────────────────────────────────────────────────────
+
+export function applyFacingChange(state: BattleState): BattleState {
+  const id   = activeId(state);
+  const tank = state.tanks[id];
+  if (!tank || state.phase !== 'pre_shot') return state;
+  const newFacing = (tank.facing === 1 ? -1 : 1) as 1 | -1;
+  let s = updateTank(state, id, { facing: newFacing });
+  s = log(s, `${tank.name} が向きを変えた`);
   return s;
 }
 
@@ -253,7 +253,6 @@ export function applyUseSkill(state: BattleState, handIdx: number): BattleState 
     case 'teleport': {
       const newX = Math.round(FIELD_MIN_X + Math.random() * (FIELD_MAX_X - FIELD_MIN_X));
       s = updateTank(s, id, { x: newX });
-      s = refreshFacing(s);
       s = log(s, `${tank.name} がテレポート！`);
       break;
     }

@@ -492,6 +492,7 @@ body {
 .bt-btn:hover:not(:disabled) { transform: translateY(-2px); }
 .bt-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .bt-btn--move   { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.15); touch-action: none; user-select: none; }
+.bt-btn--face   { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.75); border: 1px solid rgba(255,255,255,0.15); }
 .bt-btn--shoot  { background: linear-gradient(135deg, #f97316, #ec4899); color: #fff; }
 .bt-btn--end    { background: linear-gradient(135deg, #4776e6, #8e54e9); color: #fff; margin-left: auto; }
 .bt-btn--big    { padding: 10px 28px; font-size: 14px; }
