@@ -1,4 +1,4 @@
-import type { BattleState, TankState, TurnPhase, Projectile } from './gameTypes';
+import type { BattleState, TankState, TurnPhase, Projectile, TerrainPoint } from './gameTypes';
 import type { GameStartInfo } from './gameTypes';
 import { STARTER_HAND } from './skillDefs';
 
@@ -15,6 +15,50 @@ export const MAX_SPEED         = 350;  // px/s at power=1 (half of original 700)
 export const BARREL_ROOT_LOCAL = 21;   // unscaled barrel root x offset from tank center
 export const BARREL_LEN_LOCAL  = 38;   // unscaled barrel length
 export const TANK_SCALE        = 0.25; // visual scale factor
+
+// ── Terrain ───────────────────────────────────────────────────────────
+
+function seededRng(seed: number): () => number {
+  let s = (seed | 0) >>> 0;
+  return () => {
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
+    return (s >>> 0) / 0xffffffff;
+  };
+}
+function hashStr(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+function generateTerrain(seed: number): TerrainPoint[] {
+  const r = seededRng(seed);
+  const B = GROUND_Y, TOP = 245;
+  return [
+    { x: 0,   y: B },
+    { x: 80,  y: B },
+    { x: 190, y: B - Math.round(r() * 25) },
+    { x: 310, y: B - Math.round(55 + r() * 85) },
+    { x: 420, y: Math.round(TOP + r() * (B - TOP - 70)) },
+    { x: 480, y: B - Math.round(r() * 60) },
+    { x: 560, y: Math.round(TOP + r() * (B - TOP - 70)) },
+    { x: 660, y: B - Math.round(55 + r() * 85) },
+    { x: 770, y: B - Math.round(r() * 25) },
+    { x: 880, y: B },
+    { x: 960, y: B },
+  ];
+}
+
+export function getTerrainY(terrain: TerrainPoint[], x: number): number {
+  if (x <= terrain[0].x) return terrain[0].y;
+  for (let i = 0; i < terrain.length - 1; i++) {
+    if (x <= terrain[i + 1].x) {
+      const t = (x - terrain[i].x) / (terrain[i + 1].x - terrain[i].x);
+      return terrain[i].y + t * (terrain[i + 1].y - terrain[i].y);
+    }
+  }
+  return terrain[terrain.length - 1].y;
+}
 
 // ── Initial state ─────────────────────────────────────────────────────
 
@@ -41,6 +85,7 @@ export function createInitialState(info: GameStartInfo): BattleState {
     [p1.id]:   mkTank(p1,   170,  1),
     [p2raw.id]: mkTank(p2raw, 790, -1),
   };
+  const terrain = generateTerrain(hashStr(info.fighters.map(f => f.id).join('')));
   return {
     tanks,
     playerOrder: [p1.id, p2raw.id],
@@ -50,6 +95,7 @@ export function createInitialState(info: GameStartInfo): BattleState {
     projectile: null,
     log: ['バトルスタート！'],
     winner: null,
+    terrain,
   };
 }
 
@@ -103,21 +149,22 @@ export function applyFacingChange(state: BattleState): BattleState {
 
 // ── Shoot ────────────────────────────────────────────────────────────
 
-export function barrelTipScreen(tank: TankState, angle: number): { x: number; y: number } {
+export function barrelTipScreen(tank: TankState, angle: number, terrain: TerrainPoint[]): { x: number; y: number } {
   const f = tank.facing;
+  const groundY = getTerrainY(terrain, tank.x);
   return {
     x: tank.x + f * (BARREL_ROOT_LOCAL + BARREL_LEN_LOCAL * Math.cos(angle)) * TANK_SCALE,
-    y: GROUND_Y - (14 + BARREL_LEN_LOCAL * Math.sin(angle)) * TANK_SCALE,
+    y: groundY - (14 + BARREL_LEN_LOCAL * Math.sin(angle)) * TANK_SCALE,
   };
 }
 
 export function calcShot(
-  tank: TankState, power: number, angle: number, canBounce: boolean,
+  tank: TankState, power: number, angle: number, canBounce: boolean, terrain: TerrainPoint[],
 ): Projectile {
   const speed = (100 + power * MAX_SPEED) * 1.25;
   const vx    = speed * Math.cos(angle) * tank.facing;
   const vy    = -speed * Math.sin(angle);
-  const tip   = barrelTipScreen(tank, angle);
+  const tip   = barrelTipScreen(tank, angle, terrain);
   return { x: tip.x, y: tip.y, vx, vy, canBounce, bounced: false, power };
 }
 
@@ -125,7 +172,7 @@ export function applyFire(state: BattleState, power: number, angle: number): Bat
   const id   = activeId(state);
   const tank = state.tanks[id];
   const hasBounce = tank.effects.some(e => e.type === 'bounce');
-  const proj  = calcShot(tank, power, angle, hasBounce);
+  const proj  = calcShot(tank, power, angle, hasBounce, state.terrain);
   // Consume bounce effect
   const effects = hasBounce
     ? tank.effects.filter(e => e.type !== 'bounce')
@@ -155,23 +202,26 @@ export function tickProjectile(
   let nvy = p.vy + GRAVITY * dt;
   let bounced = p.bounced;
 
+  const terrainY = getTerrainY(state.terrain, nx);
+
   // Ground bounce (only if bounce_shot effect active and not yet bounced)
-  if (ny >= GROUND_Y && p.canBounce && !bounced) {
-    ny  = GROUND_Y;
+  if (ny >= terrainY && p.canBounce && !bounced) {
+    ny  = terrainY - 1;
     nvy = -Math.abs(nvy) * 0.6;
     bounced = true;
   }
 
-  // Out of bounds (ground after bounce, or off sides)
-  const outOfBounds = ny > GROUND_Y + 20 || nx < -60 || nx > 1020;
+  // Out of bounds (hit terrain after bounce, or off canvas)
+  const outOfBounds = ny > terrainY + 5 || nx < -60 || nx > 1020;
 
   // Hit check against opponent tank
   const oppId   = opponentId(state);
   const oppTank = state.tanks[oppId];
-  const hitTop  = GROUND_Y - TANK_HIT_TOP;
+  const oppGY   = getTerrainY(state.terrain, oppTank.x);
+  const hitTop  = oppGY - TANK_HIT_TOP;
   const inBox   =
     Math.abs(nx - oppTank.x) < TANK_HIT_W &&
-    ny > hitTop && ny < GROUND_Y + 5;
+    ny > hitTop && ny < oppGY + 5;
 
   if (inBox) {
     // Check smoke screen

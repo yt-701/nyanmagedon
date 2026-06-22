@@ -1,7 +1,7 @@
-import type { BattleState, GameStartInfo, TankState, Projectile } from '../game/gameTypes';
+import type { BattleState, GameStartInfo, TankState, Projectile, TerrainPoint } from '../game/gameTypes';
 import {
   GROUND_Y, GRAVITY, BARREL_ROOT_LOCAL, BARREL_LEN_LOCAL, TANK_SCALE,
-  createInitialState, opponentId, CPU_PLAYER_ID,
+  createInitialState, opponentId, CPU_PLAYER_ID, getTerrainY,
   applyMoveContinuous, applyFacingChange, applyFire, applyUseSkill, applyEndTurn,
   tickProjectile, applyDamage,
 } from '../game/battleLogic';
@@ -78,12 +78,61 @@ function drawBg(ctx: CanvasRenderingContext2D, t: number) {
   }
 }
 
+// ── Terrain drawing ───────────────────────────────────────────────────
+
+function drawTerrain(ctx: CanvasRenderingContext2D, terrain: TerrainPoint[]) {
+  ctx.save();
+
+  // Filled polygon
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  for (const pt of terrain) ctx.lineTo(pt.x, pt.y);
+  ctx.lineTo(W, H);
+  ctx.closePath();
+
+  const minY = Math.min(...terrain.map(p => p.y));
+  const grad = ctx.createLinearGradient(0, minY, 0, H);
+  grad.addColorStop(0,   'rgba(2,38,9,0.97)');
+  grad.addColorStop(0.5, 'rgba(1,18,4,0.99)');
+  grad.addColorStop(1,   '#000');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Scan-line texture
+  ctx.save();
+  ctx.clip();
+  for (let y = minY; y <= H; y += 13) {
+    const a = 0.035 + (y - minY) / (H - minY) * 0.05;
+    ctx.strokeStyle = `rgba(34,197,94,${a})`;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Double-pass glow outline
+  const passes: [number, number, number][] = [[18, 0.3, 5], [7, 1, 2]];
+  for (const [blur, alpha, lw] of passes) {
+    ctx.save();
+    glow(ctx, `rgba(74,222,128,${alpha * 0.5})`, blur);
+    ctx.strokeStyle = `rgba(74,222,128,${alpha})`;
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    ctx.moveTo(terrain[0].x, terrain[0].y);
+    for (let i = 1; i < terrain.length; i++) ctx.lineTo(terrain[i].x, terrain[i].y);
+    ctx.stroke();
+    noGlow(ctx);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
 // ── Tank drawing ──────────────────────────────────────────────────────
 
-function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: TankState, isActive: boolean, barrelAngle = Math.PI / 5) {
-  const S = 0.25; // scale factor: 1/4 of original size
+function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: TankState, isActive: boolean, groundY: number, barrelAngle = Math.PI / 5) {
+  const S = 0.25;
   ctx.save();
-  ctx.translate(cx, GROUND_Y);
+  ctx.translate(cx, groundY);
   ctx.scale(S, S);
 
   // Active glow ring
@@ -202,8 +251,8 @@ function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: Ta
 
 // ── HP bar on canvas ──────────────────────────────────────────────────
 
-function drawTankHpBar(ctx: CanvasRenderingContext2D, cx: number, tank: TankState) {
-  const by = GROUND_Y - 36, bw = 80;  // adjusted for 1/4 tank size
+function drawTankHpBar(ctx: CanvasRenderingContext2D, cx: number, tank: TankState, groundY: number) {
+  const by = groundY - 36, bw = 80;
   const bx = cx - bw / 2;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.roundRect(bx, by, bw, 7, 3.5); ctx.fill();
@@ -223,8 +272,8 @@ function drawTankHpBar(ctx: CanvasRenderingContext2D, cx: number, tank: TankStat
 
 // ── Energy bar (above active tank) ───────────────────────────────────
 
-function drawEnergyBar(ctx: CanvasRenderingContext2D, cx: number, energy: number, maxEnergy: number) {
-  const by = GROUND_Y - 50, bw = 64;
+function drawEnergyBar(ctx: CanvasRenderingContext2D, cx: number, energy: number, maxEnergy: number, groundY: number) {
+  const by = groundY - 50, bw = 64;
   const bx = cx - bw / 2;
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
   ctx.beginPath(); ctx.roundRect(bx, by, bw, 5, 2.5); ctx.fill();
@@ -240,8 +289,8 @@ function drawEnergyBar(ctx: CanvasRenderingContext2D, cx: number, energy: number
 
 // ── Power meter (above active tank when charging) ─────────────────────
 
-function drawPowerMeter(ctx: CanvasRenderingContext2D, cx: number, powerValue: number) {
-  const by = GROUND_Y - 66, bw = 80;
+function drawPowerMeter(ctx: CanvasRenderingContext2D, cx: number, powerValue: number, groundY: number) {
+  const by = groundY - 66, bw = 80;
   const bx = cx - bw / 2;
 
   // Background
@@ -278,10 +327,12 @@ function drawChargingGuide(
   tank: TankState,
   _power: number,
   angle: number,
+  terrain: TerrainPoint[],
 ) {
-  const f  = tank.facing;
+  const f       = tank.facing;
+  const groundY = getTerrainY(terrain, tank.x);
   const bx = tank.x + f * (BARREL_ROOT_LOCAL + BARREL_LEN_LOCAL * Math.cos(angle)) * TANK_SCALE;
-  const by = GROUND_Y - (14 + BARREL_LEN_LOCAL * Math.sin(angle)) * TANK_SCALE;
+  const by = groundY - (14 + BARREL_LEN_LOCAL * Math.sin(angle)) * TANK_SCALE;
   const vx = GUIDE_SPEED * Math.cos(angle) * f;
   const vy = -GUIDE_SPEED * Math.sin(angle);
 
@@ -290,7 +341,7 @@ function drawChargingGuide(
     const simT = (i / (GUIDE_DOTS - 1)) * GUIDE_SIM_SECS;
     const px = bx + vx * simT;
     const py = by + vy * simT + 0.5 * GRAVITY * simT * simT;
-    if (py > GROUND_Y || px < 0 || px > W) break;
+    if (py > getTerrainY(terrain, px) || px < 0 || px > W) break;
 
     const alpha = 0.85 * (1 - i / GUIDE_DOTS);
     const r     = Math.max(0.7, 3 - i * 0.1);
@@ -755,25 +806,29 @@ export function createBattleScene(
     // Draw
     ctx.clearRect(0, 0, W, H);
     drawBg(ctx, t);
+    drawTerrain(ctx, state.terrain);
 
     const [p1id, p2id] = state.playerOrder;
     const p1 = state.tanks[p1id], p2 = state.tanks[p2id];
+    const p1gy = getTerrainY(state.terrain, p1.x);
+    const p2gy = getTerrainY(state.terrain, p2.x);
     const myAngle = isMyTurn() && state.phase === 'charging' ? barrelAngle : undefined;
-    drawTank(ctx, p1.x, t, p1, state.activeIdx === 0, info.myPlayerId === p1id ? myAngle : undefined);
-    drawTank(ctx, p2.x, t, p2, state.activeIdx === 1, info.myPlayerId === p2id ? myAngle : undefined);
-    drawTankHpBar(ctx, p1.x, p1);
-    drawTankHpBar(ctx, p2.x, p2);
+    drawTank(ctx, p1.x, t, p1, state.activeIdx === 0, p1gy, info.myPlayerId === p1id ? myAngle : undefined);
+    drawTank(ctx, p2.x, t, p2, state.activeIdx === 1, p2gy, info.myPlayerId === p2id ? myAngle : undefined);
+    drawTankHpBar(ctx, p1.x, p1, p1gy);
+    drawTankHpBar(ctx, p2.x, p2, p2gy);
 
     // Energy / power above active tank (only for local player when it's their turn)
     if (isMyTurn()) {
       const myTank = state.tanks[info.myPlayerId];
       if (myTank) {
+        const myGY = getTerrainY(state.terrain, myTank.x);
         if (state.phase === 'pre_shot') {
-          drawEnergyBar(ctx, myTank.x, myTank.energy, myTank.maxEnergy);
+          drawEnergyBar(ctx, myTank.x, myTank.energy, myTank.maxEnergy, myGY);
         } else if (state.phase === 'charging') {
-          drawEnergyBar(ctx, myTank.x, myTank.energy, myTank.maxEnergy);
-          drawPowerMeter(ctx, myTank.x, powerVal);
-          drawChargingGuide(ctx, myTank, powerVal, barrelAngle);
+          drawEnergyBar(ctx, myTank.x, myTank.energy, myTank.maxEnergy, myGY);
+          drawPowerMeter(ctx, myTank.x, powerVal, myGY);
+          drawChargingGuide(ctx, myTank, powerVal, barrelAngle, state.terrain);
         }
       }
     }

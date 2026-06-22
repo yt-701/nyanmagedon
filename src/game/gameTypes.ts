@@ -47,6 +47,8 @@ export interface Projectile {
   power:     number;  // stored for damage calc
 }
 
+export interface TerrainPoint { x: number; y: number; }
+
 export interface BattleState {
   tanks:        Record<string, TankState>; // keyed by playerId
   playerOrder:  string[];                  // [p1Id, p2Id]
@@ -56,6 +58,7 @@ export interface BattleState {
   projectile:   Projectile | null;
   log:          string[];
   winner:       string | null;
+  terrain:      TerrainPoint[];
 }
 
 export interface GameStartInfo {
