@@ -19,62 +19,69 @@ function noGlow(ctx: CanvasRenderingContext2D) {
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0;
 }
 
+// ── Star path helper ──────────────────────────────────────────────────
+
+function starPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, outerR: number, innerR: number, points: number) {
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const a = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
+    const r = i % 2 === 0 ? outerR : innerR;
+    if (i === 0) ctx.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    else         ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  }
+  ctx.closePath();
+}
+
 // ── Background ────────────────────────────────────────────────────────
 
 function drawBg(ctx: CanvasRenderingContext2D, t: number) {
+  // Vivid pop sky
   const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-  sky.addColorStop(0,    '#070012');
-  sky.addColorStop(0.35, '#1a0533');
-  sky.addColorStop(0.65, '#6b21a8');
-  sky.addColorStop(0.85, '#be185d');
-  sky.addColorStop(1,    '#f97316');
+  sky.addColorStop(0,   '#5b21b6');
+  sky.addColorStop(0.3, '#db2777');
+  sky.addColorStop(0.7, '#ea580c');
+  sky.addColorStop(1,   '#fbbf24');
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, GROUND_Y);
 
-  // Ground
+  // Underground
   const gg = ctx.createLinearGradient(0, GROUND_Y, 0, H);
-  gg.addColorStop(0, '#1c1040'); gg.addColorStop(1, '#08061a');
+  gg.addColorStop(0, '#78350f'); gg.addColorStop(1, '#1c0803');
   ctx.fillStyle = gg;
   ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
 
-  // Horizon glow
-  ctx.save();
-  glow(ctx, '#ec4899', 12);
-  ctx.fillStyle = '#ec4899';
-  ctx.fillRect(0, GROUND_Y - 1, W, 2);
-  noGlow(ctx);
-  ctx.fillStyle = 'rgba(236,72,153,0.22)';
-  ctx.fillRect(0, GROUND_Y - 8, W, 8);
-  ctx.restore();
-
-  // Perspective grid
-  ctx.save();
-  ctx.strokeStyle = 'rgba(168,85,247,0.18)';
-  ctx.lineWidth = 1;
-  const vpx = W / 2;
-  for (let i = -12; i <= 12; i++) {
-    ctx.beginPath(); ctx.moveTo(vpx + i * 6, GROUND_Y); ctx.lineTo(vpx + i * 70, H); ctx.stroke();
-  }
-  ctx.strokeStyle = 'rgba(236,72,153,0.14)';
-  for (let row = 1; row <= 7; row++) {
-    const f  = (row / 7) ** 1.7;
-    const ly = GROUND_Y + f * (H - GROUND_Y);
-    ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(W, ly); ctx.stroke();
-  }
-  ctx.restore();
-
-  // Scrolling ruin silhouettes (parallax layer)
-  const ruins = [
-    { x: 32,  w: 24, h: 65 }, { x: 78,  w: 16, h: 95 }, { x: 105, w: 36, h: 48 },
-    { x: 560, w: 28, h: 72 }, { x: 608, w: 40, h: 52 }, { x: 668, w: 18, h: 98 },
-    { x: 710, w: 32, h: 78 }, { x: 762, w: 44, h: 58 }, { x: 840, w: 20, h: 88 },
+  // Scrolling clouds
+  const cloudData: { x: number; y: number; s: number }[] = [
+    { x: 120, y: 55, s: 1.0 }, { x: 340, y: 85, s: 0.7 },
+    { x: 580, y: 45, s: 1.2 }, { x: 800, y: 75, s: 0.85 }, { x: 1060, y: 60, s: 0.95 },
   ];
-  ctx.fillStyle = 'rgba(10,4,26,0.7)';
-  for (const r of ruins) {
-    const rx = ((r.x - t * 6) % (W + 80) + W + 80) % (W + 80) - 40;
+  for (const c of cloudData) {
+    const cx = ((c.x - t * 12) % (W + 200) + W + 200) % (W + 200) - 100;
+    const r  = 28 * c.s;
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.strokeStyle = '#1e1e1e';
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.roundRect(rx, GROUND_Y - r.h, r.w, r.h + 2, [3, 3, 0, 0]);
+    ctx.arc(cx,           c.y,           r,        0, Math.PI * 2);
+    ctx.arc(cx + r * 0.8, c.y - r * 0.4, r * 0.75, 0, Math.PI * 2);
+    ctx.arc(cx - r * 0.7, c.y - r * 0.3, r * 0.65, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
+  }
+
+  // Floating decorative stars
+  const starData = [
+    { x: 60,  y: 28 }, { x: 220, y: 18 }, { x: 450, y: 62 },
+    { x: 630, y: 22 }, { x: 760, y: 58 }, { x: 915, y: 32 },
+  ];
+  ctx.fillStyle = '#fde047';
+  ctx.strokeStyle = '#92400e';
+  ctx.lineWidth = 2;
+  for (const s of starData) {
+    const sy = s.y + Math.sin(t * 0.9 + s.x * 0.04) * 4;
+    starPath(ctx, s.x, sy, 10, 5, 5);
+    ctx.fill();
+    ctx.stroke();
   }
 }
 
@@ -83,7 +90,7 @@ function drawBg(ctx: CanvasRenderingContext2D, t: number) {
 function drawTerrain(ctx: CanvasRenderingContext2D, terrain: number[]) {
   ctx.save();
 
-  // Filled polygon
+  // Filled polygon — earthy brown
   ctx.beginPath();
   ctx.moveTo(0, H);
   ctx.lineTo(0, terrain[0]);
@@ -94,37 +101,30 @@ function drawTerrain(ctx: CanvasRenderingContext2D, terrain: number[]) {
   let minY = H;
   for (const y of terrain) if (y < minY) minY = y;
   const grad = ctx.createLinearGradient(0, minY, 0, H);
-  grad.addColorStop(0,   'rgba(2,38,9,0.97)');
-  grad.addColorStop(0.5, 'rgba(1,18,4,0.99)');
-  grad.addColorStop(1,   '#000');
+  grad.addColorStop(0,   '#92400e');
+  grad.addColorStop(0.4, '#78350f');
+  grad.addColorStop(1,   '#1c0803');
   ctx.fillStyle = grad;
   ctx.fill();
 
-  // Scan-line texture
-  ctx.save();
-  ctx.clip();
-  for (let y = minY; y <= H; y += 13) {
-    const a = 0.035 + (y - minY) / (H - minY) * 0.05;
-    ctx.strokeStyle = `rgba(34,197,94,${a})`;
-    ctx.lineWidth = 0.5;
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-  }
-  ctx.restore();
+  // Dark base outline
+  ctx.strokeStyle = '#1c0803';
+  ctx.lineWidth = 5;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(0, terrain[0]);
+  for (let x = 1; x < terrain.length; x++) ctx.lineTo(x, terrain[x]);
+  ctx.stroke();
 
-  // Double-pass glow outline
-  const passes: [number, number, number][] = [[18, 0.3, 5], [7, 1, 2]];
-  for (const [blur, alpha, lw] of passes) {
-    ctx.save();
-    glow(ctx, `rgba(74,222,128,${alpha * 0.5})`, blur);
-    ctx.strokeStyle = `rgba(74,222,128,${alpha})`;
-    ctx.lineWidth = lw;
-    ctx.beginPath();
-    ctx.moveTo(0, terrain[0]);
-    for (let x = 1; x < terrain.length; x++) ctx.lineTo(x, terrain[x]);
-    ctx.stroke();
-    noGlow(ctx);
-    ctx.restore();
-  }
+  // Bright grass strip on top
+  ctx.strokeStyle = '#84cc16';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(0, terrain[0]);
+  for (let x = 1; x < terrain.length; x++) ctx.lineTo(x, terrain[x]);
+  ctx.stroke();
 
   ctx.restore();
 }
@@ -368,14 +368,15 @@ function drawChargingGuide(
 
 // ── Projectile ────────────────────────────────────────────────────────
 
-function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, t: number) {
+function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, _t: number) {
   ctx.save();
-  glow(ctx, 'rgba(251,191,36,0.9)', 14);
-  ctx.fillStyle = `hsl(${40 + t * 180 % 30},100%,65%)`;
-  ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
-  noGlow(ctx);
-  ctx.fillStyle = '#fff9';
-  ctx.beginPath(); ctx.arc(p.x - 1, p.y - 1, 1.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1c1917';
+  ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#fde047';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(p.x - 1.5, p.y - 1.5, 1.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
@@ -384,15 +385,26 @@ function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, t: number)
 interface Explosion { x: number; y: number; age: number }
 
 function drawExplosion(ctx: CanvasRenderingContext2D, ex: Explosion) {
-  const f = 1 - ex.age;
+  const f    = 1 - ex.age;
+  const size = ex.age * 68;
+
   ctx.save();
-  glow(ctx, `rgba(249,115,22,${f * 0.8})`, 30);
-  ctx.strokeStyle = `rgba(251,191,36,${f})`;
+  ctx.translate(ex.x, ex.y);
+  ctx.rotate(ex.age * 1.8);
+
+  // Outer spiky burst
+  starPath(ctx, 0, 0, size, size * 0.44, 9);
+  ctx.fillStyle = `rgba(251,191,36,${f * 0.95})`;
+  ctx.fill();
+  ctx.strokeStyle = `rgba(28,8,0,${f * 0.85})`;
   ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(ex.x, ex.y, ex.age * 80, 0, Math.PI * 2); ctx.stroke();
-  noGlow(ctx);
-  ctx.fillStyle = `rgba(255,255,200,${f * 0.6})`;
-  ctx.beginPath(); ctx.arc(ex.x, ex.y, ex.age * 30, 0, Math.PI * 2); ctx.fill();
+  ctx.stroke();
+
+  // Inner white flash
+  starPath(ctx, 0, 0, size * 0.5, size * 0.22, 9);
+  ctx.fillStyle = `rgba(255,250,220,${f})`;
+  ctx.fill();
+
   ctx.restore();
 }
 
