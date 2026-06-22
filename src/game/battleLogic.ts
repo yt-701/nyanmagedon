@@ -134,7 +134,7 @@ function log(state: BattleState, msg: string): BattleState {
 
 // ── Move (continuous, call each frame while button is held) ──────────
 
-const SLOPE_BLOCK_TAN = Math.tan(80 * Math.PI / 180); // ≈ 5.67 (80° slope)
+const SLOPE_BLOCK_TAN = Math.tan(60 * Math.PI / 180); // ≈ 1.73 (60° slope)
 
 export function applyMoveContinuous(
   state: BattleState, direction: 'left' | 'right', dt: number,
