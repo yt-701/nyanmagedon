@@ -62,17 +62,34 @@ export function getTerrainY(terrain: number[], x: number): number {
   return terrain[Math.max(0, Math.min(960, Math.round(x)))];
 }
 
+function carveCircle(terrain: number[], cx: number, cy: number, r: number): void {
+  const r2 = r * r;
+  const x0 = Math.max(0,   Math.ceil(cx - r));
+  const x1 = Math.min(960, Math.floor(cx + r));
+  for (let x = x0; x <= x1; x++) {
+    const dx  = x - cx;
+    const newY = cy + Math.sqrt(r2 - dx * dx);
+    if (newY > terrain[x]) terrain[x] = Math.min(newY, 522);
+  }
+}
+
 export function applyExplosion(terrain: number[], hitX: number, hitY: number, radius: number): number[] {
   const next = terrain.slice();
-  const r2   = radius * radius;
-  const x0   = Math.max(0,   Math.ceil(hitX - radius));
-  const x1   = Math.min(960, Math.floor(hitX + radius));
-  for (let x = x0; x <= x1; x++) {
-    const dx    = x - hitX;
-    const depth = Math.sqrt(r2 - dx * dx);
-    const newY  = hitY + depth;
-    if (newY > next[x]) next[x] = Math.min(newY, 522);
+  // Seed with impact coords for determinism across both tabs
+  const rng  = seededRng(Math.round(hitX * 73 + hitY * 31));
+
+  // Main crater
+  carveCircle(next, hitX, hitY, radius * 0.82);
+
+  // 3–5 satellite craters for irregular edges
+  const count = 3 + Math.floor(rng() * 3);
+  for (let i = 0; i < count; i++) {
+    const offsetX = (rng() - 0.5) * radius * 1.3;
+    const offsetY = rng() * radius * 0.35;
+    const subR    = radius * (0.28 + rng() * 0.32);
+    carveCircle(next, hitX + offsetX, hitY + offsetY, subR);
   }
+
   return next;
 }
 
