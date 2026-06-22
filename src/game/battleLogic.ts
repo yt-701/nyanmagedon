@@ -11,7 +11,7 @@ export const ENERGY_DRAIN_RATE = 55;  // energy/s while moving
 export const TANK_HIT_W       = 12;  // half-width of tank hitbox (1/4 of original 48)
 export const TANK_HIT_TOP     = 23;  // how far above GROUND_Y the hitbox extends (1/4 of 90)
 export const GRAVITY           = 680;  // px/s²
-export const MAX_SPEED         = 700;  // px/s at power=1
+export const MAX_SPEED         = 350;  // px/s at power=1 (half of original 700)
 export const BARREL_ROOT_LOCAL = 21;   // unscaled barrel root x offset from tank center
 export const BARREL_LEN_LOCAL  = 38;   // unscaled barrel length
 export const TANK_SCALE        = 0.25; // visual scale factor
@@ -114,7 +114,7 @@ export function barrelTipScreen(tank: TankState, angle: number): { x: number; y:
 export function calcShot(
   tank: TankState, power: number, angle: number, canBounce: boolean,
 ): Projectile {
-  const speed = 200 + power * MAX_SPEED;
+  const speed = 100 + power * MAX_SPEED;
   const vx    = speed * Math.cos(angle) * tank.facing;
   const vy    = -speed * Math.sin(angle);
   const tip   = barrelTipScreen(tank, angle);
@@ -178,7 +178,7 @@ export function tickProjectile(
     const hasSmoke = oppTank.effects.some(e => e.type === 'smoke');
     const activeT  = state.tanks[activeId(state)];
     const hasAP    = activeT.effects.some(e => e.type === 'ap_round');
-    let damage     = Math.round(p.power * 50);
+    let damage     = Math.round(p.power * 25);
     if (hasAP) damage = Math.round(damage * 1.5);
 
     // Consume effects
