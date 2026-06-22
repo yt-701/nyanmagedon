@@ -80,8 +80,10 @@ function drawBg(ctx: CanvasRenderingContext2D, t: number) {
 // ── Tank drawing ──────────────────────────────────────────────────────
 
 function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: TankState, isActive: boolean) {
-  const cy = GROUND_Y;
+  const S = 0.25; // scale factor: 1/4 of original size
   ctx.save();
+  ctx.translate(cx, GROUND_Y);
+  ctx.scale(S, S);
 
   // Active glow ring
   if (isActive) {
@@ -89,54 +91,54 @@ function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: Ta
     glow(ctx, 'rgba(251,191,36,0.7)', 22);
     ctx.strokeStyle = `rgba(251,191,36,${0.5 + Math.sin(t * 4) * 0.3})`;
     ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.ellipse(cx, cy - 18, 70, 40, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0, -18, 70, 40, 0, 0, Math.PI * 2); ctx.stroke();
     noGlow(ctx);
     ctx.restore();
   }
 
   // Tracks
   ctx.fillStyle = '#111827';
-  ctx.beginPath(); ctx.roundRect(cx - 52, cy + 19, 104, 16, 8); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-52, 19, 104, 16, 8); ctx.fill();
   for (let i = 0; i < 9; i++) {
     ctx.fillStyle = '#374151';
-    ctx.beginPath(); ctx.roundRect(cx - 44 + i * 11, cy + 20, 9, 14, 2); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(-44 + i * 11, 20, 9, 14, 2); ctx.fill();
   }
   ctx.save();
   glow(ctx, '#22c55e', 7);
   ctx.fillStyle = 'rgba(34,197,94,0.3)';
-  ctx.fillRect(cx - 50, cy + 19, 100, 2);
+  ctx.fillRect(-50, 19, 100, 2);
   noGlow(ctx);
   ctx.restore();
 
   // Hull
-  const hg = ctx.createLinearGradient(0, cy, 0, cy + 22);
+  const hg = ctx.createLinearGradient(0, 0, 0, 22);
   hg.addColorStop(0, '#4ade80'); hg.addColorStop(1, '#16a34a');
   ctx.fillStyle = hg;
-  ctx.beginPath(); ctx.roundRect(cx - 44, cy, 88, 22, 4); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-44, 0, 88, 22, 4); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
-  ctx.beginPath(); ctx.roundRect(cx - 42, cy + 1, 84, 6, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-42, 1, 84, 6, 3); ctx.fill();
 
   // Turret
-  const tg = ctx.createLinearGradient(0, cy - 22, 0, cy);
+  const tg = ctx.createLinearGradient(0, -22, 0, 0);
   tg.addColorStop(0, '#86efac'); tg.addColorStop(1, '#22c55e');
   ctx.fillStyle = tg;
-  ctx.beginPath(); ctx.roundRect(cx - 23, cy - 22, 46, 23, 5); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-23, -22, 46, 23, 5); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
-  ctx.beginPath(); ctx.roundRect(cx - 21, cy - 21, 42, 6, 4); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-21, -21, 42, 6, 4); ctx.fill();
 
   // Barrel (points in facing direction)
   const f = tank.facing;
   ctx.fillStyle = '#15803d';
-  ctx.beginPath(); ctx.roundRect(cx + (f > 0 ? 21 : -59), cy - 14, 38, 8, 4); ctx.fill();
+  ctx.beginPath(); ctx.roundRect((f > 0 ? 21 : -59), -14, 38, 8, 4); ctx.fill();
   ctx.save();
   glow(ctx, '#4ade80', 14);
   ctx.fillStyle = '#bbf7d0';
-  ctx.beginPath(); ctx.arc(cx + f * 59, cy - 10, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(f * 59, -10, 5, 0, Math.PI * 2); ctx.fill();
   noGlow(ctx);
   ctx.restore();
 
-  // Cat head
-  const hx = cx - 2, hy = cy - 50;
+  // Cat head (local coords: hx=-2, hy=-50)
+  const hx = -2, hy = -50;
   const headG = ctx.createRadialGradient(hx - 7, hy - 9, 0, hx, hy, 26);
   headG.addColorStop(0, '#fde68a'); headG.addColorStop(0.55, '#f97316'); headG.addColorStop(1, '#ea580c');
   ctx.fillStyle = headG;
@@ -185,7 +187,7 @@ function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: Ta
     glow(ctx, 'rgba(148,163,184,0.8)', 18);
     ctx.strokeStyle = `rgba(148,163,184,${0.4 + Math.sin(t * 5) * 0.3})`;
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(cx, cy - 20, 68, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, -20, 68, 0, Math.PI * 2); ctx.stroke();
     noGlow(ctx);
     ctx.restore();
   }
@@ -196,7 +198,7 @@ function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: Ta
 // ── HP bar on canvas ──────────────────────────────────────────────────
 
 function drawTankHpBar(ctx: CanvasRenderingContext2D, cx: number, tank: TankState) {
-  const by = GROUND_Y - 115, bw = 96;
+  const by = GROUND_Y - 36, bw = 80;  // adjusted for 1/4 tank size
   const bx = cx - bw / 2;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.roundRect(bx, by, bw, 7, 3.5); ctx.fill();
@@ -217,7 +219,7 @@ function drawTankHpBar(ctx: CanvasRenderingContext2D, cx: number, tank: TankStat
 // ── Energy bar (above active tank) ───────────────────────────────────
 
 function drawEnergyBar(ctx: CanvasRenderingContext2D, cx: number, energy: number, maxEnergy: number) {
-  const by = GROUND_Y - 128, bw = 72;
+  const by = GROUND_Y - 50, bw = 64;
   const bx = cx - bw / 2;
   ctx.fillStyle = 'rgba(0,0,0,0.4)';
   ctx.beginPath(); ctx.roundRect(bx, by, bw, 5, 2.5); ctx.fill();
@@ -234,7 +236,7 @@ function drawEnergyBar(ctx: CanvasRenderingContext2D, cx: number, energy: number
 // ── Power meter (above active tank when charging) ─────────────────────
 
 function drawPowerMeter(ctx: CanvasRenderingContext2D, cx: number, powerValue: number) {
-  const by = GROUND_Y - 148, bw = 96;
+  const by = GROUND_Y - 66, bw = 80;
   const bx = cx - bw / 2;
 
   // Background
@@ -425,7 +427,7 @@ function updateUI(
     setW('bt-energy-bar', `${myTank.energy / myTank.maxEnergy * 100}%`);
     set('bt-energy-txt', `${myTank.energy.toFixed(1)}/${myTank.maxEnergy}`);
     // Disable move buttons if no energy
-    const canMove = myTank.energy >= 25;
+    const canMove = myTank.energy > 0.5;
     (document.getElementById('bt-left')  as HTMLButtonElement).disabled = !canMove;
     (document.getElementById('bt-right') as HTMLButtonElement).disabled = !canMove;
     // Skills

@@ -6,10 +6,10 @@ import { STARTER_HAND } from './skillDefs';
 export const GROUND_Y         = 380;  // y coordinate of ground surface
 export const FIELD_MIN_X      = 80;
 export const FIELD_MAX_X      = 880;
-export const MOVE_SPEED       = 190;  // px/s during hold
+export const MOVE_SPEED       = 48;   // px/s during hold (1/4 of original 190)
 export const ENERGY_DRAIN_RATE = 55;  // energy/s while moving
-export const TANK_HIT_W       = 48;  // half-width of tank hitbox
-export const TANK_HIT_TOP     = 90;  // how far above GROUND_Y the hitbox extends
+export const TANK_HIT_W       = 12;  // half-width of tank hitbox (1/4 of original 48)
+export const TANK_HIT_TOP     = 23;  // how far above GROUND_Y the hitbox extends (1/4 of 90)
 export const GRAVITY          = 400; // px/s²
 export const MAX_SPEED        = 700; // px/s at power=1
 
@@ -28,7 +28,7 @@ export function createInitialState(info: GameStartInfo): BattleState {
   const mkTank = (p: { id: string; name: string }, x: number, facing: 1 | -1): TankState => ({
     playerId: p.id, name: p.name,
     x, hp: 100, maxHp: 100,
-    energy: 100, maxEnergy: 100,
+    energy: 400, maxEnergy: 400,
     facing,
     hand: [...STARTER_HAND],
     effects: [],
@@ -108,7 +108,7 @@ export function calcShot(
   const angle = lerp(Math.PI * 0.38, Math.PI * 0.13, power); // 68° → 23°
   const vx    = speed * Math.cos(angle) * tank.facing;
   const vy    = -speed * Math.sin(angle);
-  const bx    = tank.x + 60 * tank.facing;  // barrel tip X
+  const bx    = tank.x + 15 * tank.facing;  // barrel tip X (scaled 1/4)
   const by    = GROUND_Y - 15;               // barrel height
   return { x: bx, y: by, vx, vy, canBounce, bounced: false, power };
 }
