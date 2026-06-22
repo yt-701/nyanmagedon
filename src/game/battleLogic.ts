@@ -10,8 +10,11 @@ export const MOVE_SPEED       = 48;   // px/s during hold (1/4 of original 190)
 export const ENERGY_DRAIN_RATE = 55;  // energy/s while moving
 export const TANK_HIT_W       = 12;  // half-width of tank hitbox (1/4 of original 48)
 export const TANK_HIT_TOP     = 23;  // how far above GROUND_Y the hitbox extends (1/4 of 90)
-export const GRAVITY          = 680; // px/s²
-export const MAX_SPEED        = 700; // px/s at power=1
+export const GRAVITY           = 680;  // px/s²
+export const MAX_SPEED         = 700;  // px/s at power=1
+export const BARREL_ROOT_LOCAL = 21;   // unscaled barrel root x offset from tank center
+export const BARREL_LEN_LOCAL  = 38;   // unscaled barrel length
+export const TANK_SCALE        = 0.25; // visual scale factor
 
 // ── Initial state ─────────────────────────────────────────────────────
 
@@ -100,24 +103,29 @@ export function applyFacingChange(state: BattleState): BattleState {
 
 // ── Shoot ────────────────────────────────────────────────────────────
 
-export function calcShot(
-  tank: TankState, power: number, canBounce: boolean,
-): Projectile {
-  // Higher power → flatter angle; lower power → steeper arc
-  const speed = 200 + power * MAX_SPEED;
-  const angle = lerp(Math.PI * 0.38, Math.PI * 0.13, power); // 68° → 23°
-  const vx    = speed * Math.cos(angle) * tank.facing;
-  const vy    = -speed * Math.sin(angle);
-  const bx    = tank.x + 15 * tank.facing;  // barrel tip X (scaled 1/4)
-  const by    = GROUND_Y - 15;               // barrel height
-  return { x: bx, y: by, vx, vy, canBounce, bounced: false, power };
+export function barrelTipScreen(tank: TankState, angle: number): { x: number; y: number } {
+  const f = tank.facing;
+  return {
+    x: tank.x + f * (BARREL_ROOT_LOCAL + BARREL_LEN_LOCAL * Math.cos(angle)) * TANK_SCALE,
+    y: GROUND_Y - (14 + BARREL_LEN_LOCAL * Math.sin(angle)) * TANK_SCALE,
+  };
 }
 
-export function applyFire(state: BattleState, power: number): BattleState {
+export function calcShot(
+  tank: TankState, power: number, angle: number, canBounce: boolean,
+): Projectile {
+  const speed = 200 + power * MAX_SPEED;
+  const vx    = speed * Math.cos(angle) * tank.facing;
+  const vy    = -speed * Math.sin(angle);
+  const tip   = barrelTipScreen(tank, angle);
+  return { x: tip.x, y: tip.y, vx, vy, canBounce, bounced: false, power };
+}
+
+export function applyFire(state: BattleState, power: number, angle: number): BattleState {
   const id   = activeId(state);
   const tank = state.tanks[id];
   const hasBounce = tank.effects.some(e => e.type === 'bounce');
-  const proj  = calcShot(tank, power, hasBounce);
+  const proj  = calcShot(tank, power, angle, hasBounce);
   // Consume bounce effect
   const effects = hasBounce
     ? tank.effects.filter(e => e.type !== 'bounce')
@@ -302,8 +310,3 @@ export function applyEndTurn(state: BattleState): BattleState {
   return s;
 }
 
-// ── Util ─────────────────────────────────────────────────────────────
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}

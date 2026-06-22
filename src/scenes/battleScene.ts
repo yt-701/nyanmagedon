@@ -1,6 +1,7 @@
 import type { BattleState, GameStartInfo, TankState, Projectile } from '../game/gameTypes';
 import {
-  GROUND_Y, GRAVITY, createInitialState, opponentId, CPU_PLAYER_ID,
+  GROUND_Y, GRAVITY, BARREL_ROOT_LOCAL, BARREL_LEN_LOCAL, TANK_SCALE,
+  MAX_SPEED, createInitialState, opponentId, CPU_PLAYER_ID,
   applyMoveContinuous, applyFacingChange, applyFire, applyUseSkill, applyEndTurn,
   tickProjectile, applyDamage,
 } from '../game/battleLogic';
@@ -79,7 +80,7 @@ function drawBg(ctx: CanvasRenderingContext2D, t: number) {
 
 // ── Tank drawing ──────────────────────────────────────────────────────
 
-function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: TankState, isActive: boolean) {
+function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: TankState, isActive: boolean, barrelAngle = Math.PI / 5) {
   const S = 0.25; // scale factor: 1/4 of original size
   ctx.save();
   ctx.translate(cx, GROUND_Y);
@@ -126,15 +127,19 @@ function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: Ta
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
   ctx.beginPath(); ctx.roundRect(-21, -21, 42, 6, 4); ctx.fill();
 
-  // Barrel (points in facing direction)
+  // Barrel (rotates by barrelAngle elevation)
   const f = tank.facing;
+  ctx.save();
+  ctx.translate(f * 21, -14);          // barrel root
+  ctx.rotate(-barrelAngle * f);        // elevate (up = negative canvas y)
   ctx.fillStyle = '#15803d';
-  ctx.beginPath(); ctx.roundRect((f > 0 ? 21 : -59), -14, 38, 8, 4); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(f > 0 ? 0 : -38, -4, 38, 8, 4); ctx.fill();
   ctx.save();
   glow(ctx, '#4ade80', 14);
   ctx.fillStyle = '#bbf7d0';
-  ctx.beginPath(); ctx.arc(f * 59, -10, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(f * 38, 0, 5, 0, Math.PI * 2); ctx.fill();
   noGlow(ctx);
+  ctx.restore();
   ctx.restore();
 
   // Cat head (local coords: hx=-2, hy=-50)
@@ -262,33 +267,35 @@ function drawPowerMeter(ctx: CanvasRenderingContext2D, cx: number, powerValue: n
   ctx.fillText(`POWER  ${Math.round(powerValue * 100)}%`, cx, by - 2);
 }
 
-// ── Trajectory guide (shows briefly right after firing) ───────────────
+// ── Trajectory guide (shown during charging phase) ────────────────────
 
-const GUIDE_SHOW_SECS = 0.65;  // how long the guide is visible
-const GUIDE_SIM_SECS  = 0.42;  // how many seconds of arc to preview
-const GUIDE_DOTS      = 18;
+const GUIDE_DOTS    = 22;
+const GUIDE_SIM_SECS = 1.8; // seconds to simulate ahead
 
-interface FireInfo { x0: number; y0: number; vx: number; vy: number; firedAt: number }
-
-function drawTrajectoryGuide(ctx: CanvasRenderingContext2D, fi: FireInfo, nowMs: number) {
-  const age = (nowMs - fi.firedAt) / 1000;
-  if (age > GUIDE_SHOW_SECS) return;
-  const fadeAlpha = 1 - age / GUIDE_SHOW_SECS;
+function drawChargingGuide(
+  ctx: CanvasRenderingContext2D,
+  tank: TankState,
+  power: number,
+  angle: number,
+) {
+  const f  = tank.facing;
+  const bx = tank.x + f * (BARREL_ROOT_LOCAL + BARREL_LEN_LOCAL * Math.cos(angle)) * TANK_SCALE;
+  const by = GROUND_Y - (14 + BARREL_LEN_LOCAL * Math.sin(angle)) * TANK_SCALE;
+  const speed = 200 + power * MAX_SPEED;
+  const vx = speed * Math.cos(angle) * f;
+  const vy = -speed * Math.sin(angle);
 
   ctx.save();
   for (let i = 0; i < GUIDE_DOTS; i++) {
     const simT = (i / (GUIDE_DOTS - 1)) * GUIDE_SIM_SECS;
-    const px = fi.x0 + fi.vx * simT;
-    const py = fi.y0 + fi.vy * simT + 0.5 * GRAVITY * simT * simT;
-    if (py > GROUND_Y) break;
+    const px = bx + vx * simT;
+    const py = by + vy * simT + 0.5 * GRAVITY * simT * simT;
+    if (py > GROUND_Y || px < 0 || px > W) break;
 
-    // Dots get smaller and more transparent toward the end
-    const dotFade = 1 - i / GUIDE_DOTS;
-    const alpha   = fadeAlpha * dotFade * 0.9;
-    const r       = Math.max(0.8, 3.5 - i * 0.15);
-
+    const alpha = 0.85 * (1 - i / GUIDE_DOTS);
+    const r     = Math.max(0.7, 3 - i * 0.1);
     ctx.save();
-    glow(ctx, `rgba(6,182,212,${alpha * 0.7})`, 8);
+    glow(ctx, `rgba(6,182,212,${alpha * 0.6})`, 7);
     ctx.fillStyle = `rgba(165,243,252,${alpha})`;
     ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
     noGlow(ctx);
@@ -374,11 +381,18 @@ function buildBottomBar(container: HTMLElement): HTMLElement {
     </div>
     <!-- charging panel -->
     <div id="bt-panel-charge" class="bt-panel" style="display:none">
-      <div class="bt-power-row">
-        <span class="bt-power-lbl">POWER</span>
-        <div class="bt-power-track">
-          <div class="bt-power-fill" id="bt-power-fill" style="width:0%"></div>
-          <span class="bt-power-pct" id="bt-power-pct">0%</span>
+      <div class="bt-charge-controls">
+        <div class="bt-power-row">
+          <span class="bt-power-lbl">POWER</span>
+          <div class="bt-power-track">
+            <div class="bt-power-fill" id="bt-power-fill" style="width:0%"></div>
+            <span class="bt-power-pct" id="bt-power-pct">0%</span>
+          </div>
+        </div>
+        <div class="bt-angle-row">
+          <button class="bt-btn bt-btn--angle" id="bt-angle-up">▲</button>
+          <span class="bt-angle-val" id="bt-angle-val">45°</span>
+          <button class="bt-btn bt-btn--angle" id="bt-angle-down">▼</button>
         </div>
       </div>
       <div class="bt-action-row bt-action-row--center">
@@ -531,10 +545,15 @@ export function createBattleScene(
   // Game state
   let state: BattleState = createInitialState(info);
   info.fighters.findIndex(f => f.id === info.myPlayerId);
+  const ANGLE_DEFAULT = Math.PI / 4;   // 45°
+  const ANGLE_MIN     = Math.PI / 12;  // 15°
+  const ANGLE_MAX     = Math.PI * 5 / 12; // 75°
+  const ANGLE_STEP    = Math.PI / 24;  // 7.5°
+
   let powerVal    = 0;
+  let barrelAngle = ANGLE_DEFAULT;
   let movingDir: 'left' | 'right' | null = null;
   let lastMoveSend = 0;
-  let fireInfo: FireInfo | null = null;
   let t         = 0, lastTime = 0, rafId = 0;
   const explosions: Explosion[] = [];
 
@@ -569,7 +588,6 @@ export function createBattleScene(
       state = { ...state, tanks: { ...state.tanks, [oppId]: { ...state.tanks[oppId], x: evt.newX, energy: evt.newEnergy } } };
     } else if (evt.type === 'FIRE') {
       state = { ...state, projectile: { x: evt.startX, y: evt.startY, vx: evt.vx, vy: evt.vy, canBounce: evt.bounce, bounced: false, power: evt.power }, phase: 'animating' };
-      fireInfo = { x0: evt.startX, y0: evt.startY, vx: evt.vx, vy: evt.vy, firedAt: performance.now() };
     } else if (evt.type === 'USE_SKILL') {
       state = evt.resultState;
     } else if (evt.type === 'END_TURN') {
@@ -588,16 +606,34 @@ export function createBattleScene(
 
   function onShoot() {
     if (!isMyTurn() || state.phase !== 'pre_shot') return;
+    barrelAngle = ANGLE_DEFAULT;
+    updateAngleDisplay();
     state = { ...state, phase: 'charging' };
+  }
+
+  function updateAngleDisplay() {
+    const el = document.getElementById('bt-angle-val');
+    if (el) el.textContent = `${Math.round(barrelAngle * 180 / Math.PI)}°`;
+  }
+
+  function onAngleUp() {
+    if (!isMyTurn() || state.phase !== 'charging') return;
+    barrelAngle = Math.min(ANGLE_MAX, barrelAngle + ANGLE_STEP);
+    updateAngleDisplay();
+  }
+
+  function onAngleDown() {
+    if (!isMyTurn() || state.phase !== 'charging') return;
+    barrelAngle = Math.max(ANGLE_MIN, barrelAngle - ANGLE_STEP);
+    updateAngleDisplay();
   }
 
   function onFire() {
     if (!isMyTurn() || state.phase !== 'charging') return;
-    const next = applyFire(state, powerVal);
+    const next = applyFire(state, powerVal, barrelAngle);
     if (!next.projectile) return;
     const p = next.projectile;
     channel.send({ type: 'FIRE', vx: p.vx, vy: p.vy, startX: p.x, startY: p.y, power: p.power, bounce: p.canBounce });
-    fireInfo = { x0: p.x, y0: p.y, vx: p.vx, vy: p.vy, firedAt: performance.now() };
     state = next;
   }
 
@@ -646,6 +682,8 @@ export function createBattleScene(
 
   document.getElementById('bt-face')?.addEventListener('click', onFacingChange);
   document.getElementById('bt-shoot')?.addEventListener('click', onShoot);
+  document.getElementById('bt-angle-up')?.addEventListener('click', onAngleUp);
+  document.getElementById('bt-angle-down')?.addEventListener('click', onAngleDown);
   document.getElementById('bt-fire')?.addEventListener('click', onFire);
   document.getElementById('bt-cancel')?.addEventListener('click', onCancel);
   document.getElementById('bt-end-turn')?.addEventListener('click', onEndTurn);
@@ -715,8 +753,9 @@ export function createBattleScene(
 
     const [p1id, p2id] = state.playerOrder;
     const p1 = state.tanks[p1id], p2 = state.tanks[p2id];
-    drawTank(ctx, p1.x, t, p1, state.activeIdx === 0);
-    drawTank(ctx, p2.x, t, p2, state.activeIdx === 1);
+    const myAngle = isMyTurn() && state.phase === 'charging' ? barrelAngle : undefined;
+    drawTank(ctx, p1.x, t, p1, state.activeIdx === 0, info.myPlayerId === p1id ? myAngle : undefined);
+    drawTank(ctx, p2.x, t, p2, state.activeIdx === 1, info.myPlayerId === p2id ? myAngle : undefined);
     drawTankHpBar(ctx, p1.x, p1);
     drawTankHpBar(ctx, p2.x, p2);
 
@@ -729,11 +768,11 @@ export function createBattleScene(
         } else if (state.phase === 'charging') {
           drawEnergyBar(ctx, myTank.x, myTank.energy, myTank.maxEnergy);
           drawPowerMeter(ctx, myTank.x, powerVal);
+          drawChargingGuide(ctx, myTank, powerVal, barrelAngle);
         }
       }
     }
 
-    if (fireInfo) drawTrajectoryGuide(ctx, fireInfo, now);
     if (state.projectile) drawProjectile(ctx, state.projectile, t);
     explosions.forEach(e => drawExplosion(ctx, e));
 
