@@ -1,4 +1,5 @@
 import type { RoomState, RoomPlayer, PlayerRole } from '../room/roomTypes';
+import type { GameStartInfo } from '../game/gameTypes';
 import { RoomManager } from '../room/roomManager';
 import { getAvatar } from '../room/utils';
 
@@ -117,7 +118,7 @@ export function createRoomScene(
   code: string,
   me: RoomPlayer,
   isCreator: boolean,
-  onGameStart: () => void,
+  onGameStart: (info: GameStartInfo) => void,
   onLeave: () => void,
 ): () => void {
   const root = document.createElement('div');
@@ -167,7 +168,13 @@ export function createRoomScene(
 
   const mgr = new RoomManager(code, me, isCreator);
   mgr.onChange(s => render(s, me.id, mgr));
-  mgr.onStart(onGameStart);
+  mgr.onStart(() => {
+    const fighters = Object.values(mgr.state.players)
+      .filter(p => p.role === 'fighter')
+      .sort((a, b) => a.joinedAt - b.joinedAt)
+      .slice(0, 2);
+    onGameStart({ roomCode: code, myPlayerId: me.id, fighters });
+  });
 
   // Initial render
   render(mgr.state, me.id, mgr);

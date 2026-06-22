@@ -1,14 +1,14 @@
 import './styles.css';
 import type { RoomPlayer } from './room/roomTypes';
+import type { GameStartInfo } from './game/gameTypes';
 import { createTitleScene } from './scenes/titleScene';
 import { createRoomScene }  from './scenes/roomScene';
-import { createGameScene }  from './scenes/gameScene';
+import { createBattleScene } from './scenes/battleScene';
 
 const container = document.createElement('div');
 container.id = 'nyan-container';
 document.body.appendChild(container);
 
-// Scale 960×540 to fill the viewport while preserving aspect ratio
 function resizeContainer(): void {
   const scale = Math.min(window.innerWidth / 960, window.innerHeight / 540);
   container.style.transform = `scale(${scale})`;
@@ -30,10 +30,10 @@ function goRoom(code: string, me: RoomPlayer, isCreator: boolean) {
   stopCurrent = createRoomScene(container, code, me, isCreator, goGame, goTitle);
 }
 
-function goGame() {
+function goGame(info: GameStartInfo) {
   stopCurrent?.();
   container.innerHTML = '';
-  stopCurrent = createGameScene(container, goTitle);
+  stopCurrent = createBattleScene(container, info, goTitle);
 }
 
 goTitle();
