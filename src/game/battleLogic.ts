@@ -62,50 +62,32 @@ export function getTerrainY(terrain: number[], x: number): number {
   return terrain[Math.max(0, Math.min(960, Math.round(x)))];
 }
 
-// Carve a circle into terrain with optional low-frequency depth noise
-function carveCircle(
-  terrain: number[], cx: number, cy: number, r: number, rng?: () => number,
-): void {
+function carveCircle(terrain: number[], cx: number, cy: number, r: number): void {
   const r2 = r * r;
   const x0 = Math.max(0,   Math.ceil(cx - r));
   const x1 = Math.min(960, Math.floor(cx + r));
-  const len = x1 - x0 + 1;
-
-  // Build smooth noise curve from a few control points
-  let noise: number[] | null = null;
-  if (rng) {
-    const N = 9;
-    const ctrl = Array.from({ length: N + 1 }, () => 0.45 + rng() * 1.1);
-    noise = Array.from({ length: len }, (_, i) => {
-      const t  = i / Math.max(1, len - 1);
-      const ni = t * N;
-      const n0 = Math.floor(ni);
-      return ctrl[n0] * (1 - (ni - n0)) + ctrl[Math.min(n0 + 1, N)] * (ni - n0);
-    });
-  }
-
   for (let x = x0; x <= x1; x++) {
-    const dx   = x - cx;
-    const depth = Math.sqrt(r2 - dx * dx) * (noise ? noise[x - x0] : 1);
-    const newY  = cy + depth;
+    const dx  = x - cx;
+    const newY = cy + Math.sqrt(r2 - dx * dx);
     if (newY > terrain[x]) terrain[x] = Math.min(newY, 522);
   }
 }
 
 export function applyExplosion(terrain: number[], hitX: number, hitY: number, radius: number): number[] {
   const next = terrain.slice();
+  // Seed with impact coords for determinism across both tabs
   const rng  = seededRng(Math.round(hitX * 73 + hitY * 31));
 
-  // Main crater with noise
-  carveCircle(next, hitX, hitY, radius * 0.88, rng);
+  // Main crater
+  carveCircle(next, hitX, hitY, radius * 0.82);
 
-  // 5–8 satellite craters (also noisy) for jagged edges
-  const count = 5 + Math.floor(rng() * 4);
+  // 3–5 satellite craters for irregular edges
+  const count = 3 + Math.floor(rng() * 3);
   for (let i = 0; i < count; i++) {
-    const offsetX = (rng() - 0.5) * radius * 1.4;
-    const offsetY = rng() * radius * 0.4;
-    const subR    = radius * (0.22 + rng() * 0.38);
-    carveCircle(next, hitX + offsetX, hitY + offsetY, subR, rng);
+    const offsetX = (rng() - 0.5) * radius * 1.3;
+    const offsetY = rng() * radius * 0.35;
+    const subR    = radius * (0.28 + rng() * 0.32);
+    carveCircle(next, hitX + offsetX, hitY + offsetY, subR);
   }
 
   return next;
