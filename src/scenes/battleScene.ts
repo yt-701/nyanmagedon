@@ -1,7 +1,7 @@
 import type { BattleState, GameStartInfo, TankState, Projectile } from '../game/gameTypes';
 import {
   GROUND_Y, GRAVITY, BARREL_ROOT_LOCAL, BARREL_LEN_LOCAL, TANK_SCALE,
-  MAX_SPEED, createInitialState, opponentId, CPU_PLAYER_ID,
+  createInitialState, opponentId, CPU_PLAYER_ID,
   applyMoveContinuous, applyFacingChange, applyFire, applyUseSkill, applyEndTurn,
   tickProjectile, applyDamage,
 } from '../game/battleLogic';
@@ -269,21 +269,21 @@ function drawPowerMeter(ctx: CanvasRenderingContext2D, cx: number, powerValue: n
 
 // ── Trajectory guide (shown during charging phase) ────────────────────
 
-const GUIDE_DOTS    = 22;
-const GUIDE_SIM_SECS = 1.8; // seconds to simulate ahead
+const GUIDE_DOTS     = 10;
+const GUIDE_SIM_SECS = 0.18; // very short — direction indicator only
+const GUIDE_SPEED    = 350;  // fixed display speed, independent of power
 
 function drawChargingGuide(
   ctx: CanvasRenderingContext2D,
   tank: TankState,
-  power: number,
+  _power: number,
   angle: number,
 ) {
   const f  = tank.facing;
   const bx = tank.x + f * (BARREL_ROOT_LOCAL + BARREL_LEN_LOCAL * Math.cos(angle)) * TANK_SCALE;
   const by = GROUND_Y - (14 + BARREL_LEN_LOCAL * Math.sin(angle)) * TANK_SCALE;
-  const speed = 200 + power * MAX_SPEED;
-  const vx = speed * Math.cos(angle) * f;
-  const vy = -speed * Math.sin(angle);
+  const vx = GUIDE_SPEED * Math.cos(angle) * f;
+  const vy = -GUIDE_SPEED * Math.sin(angle);
 
   ctx.save();
   for (let i = 0; i < GUIDE_DOTS; i++) {
