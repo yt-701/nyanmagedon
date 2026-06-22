@@ -545,15 +545,17 @@ export function createBattleScene(
   // Game state
   let state: BattleState = createInitialState(info);
   info.fighters.findIndex(f => f.id === info.myPlayerId);
-  const ANGLE_DEFAULT = Math.PI / 4;   // 45°
-  const ANGLE_MIN     = Math.PI / 12;  // 15°
+  const ANGLE_DEFAULT = Math.PI / 4;      // 45°
+  const ANGLE_MIN     = Math.PI / 12;     // 15°
   const ANGLE_MAX     = Math.PI * 5 / 12; // 75°
-  const ANGLE_STEP    = Math.PI / 24;  // 7.5°
+
+  const ANGLE_RATE = Math.PI / 3; // radians/s for continuous adjustment (60°/s)
 
   let powerVal    = 0;
   let barrelAngle = ANGLE_DEFAULT;
   let movingDir: 'left' | 'right' | null = null;
   let lastMoveSend = 0;
+  let angleDir: 'up' | 'down' | null = null;
   let t         = 0, lastTime = 0, rafId = 0;
   const explosions: Explosion[] = [];
 
@@ -616,17 +618,11 @@ export function createBattleScene(
     if (el) el.textContent = `${Math.round(barrelAngle * 180 / Math.PI)}°`;
   }
 
-  function onAngleUp() {
+  function startAngle(dir: 'up' | 'down') {
     if (!isMyTurn() || state.phase !== 'charging') return;
-    barrelAngle = Math.min(ANGLE_MAX, barrelAngle + ANGLE_STEP);
-    updateAngleDisplay();
+    angleDir = dir;
   }
-
-  function onAngleDown() {
-    if (!isMyTurn() || state.phase !== 'charging') return;
-    barrelAngle = Math.max(ANGLE_MIN, barrelAngle - ANGLE_STEP);
-    updateAngleDisplay();
-  }
+  function stopAngle() { angleDir = null; }
 
   function onFire() {
     if (!isMyTurn() || state.phase !== 'charging') return;
@@ -677,13 +673,15 @@ export function createBattleScene(
   leftBtn?.addEventListener('pointerdown',  (e) => { e.preventDefault(); startMove('left'); });
   rightBtn?.addEventListener('pointerdown', (e) => { e.preventDefault(); startMove('right'); });
   // Release anywhere stops movement
-  document.addEventListener('pointerup',   stopMove);
+  document.addEventListener('pointerup',     stopMove);
   document.addEventListener('pointercancel', stopMove);
+  document.addEventListener('pointerup',     stopAngle);
+  document.addEventListener('pointercancel', stopAngle);
 
   document.getElementById('bt-face')?.addEventListener('click', onFacingChange);
   document.getElementById('bt-shoot')?.addEventListener('click', onShoot);
-  document.getElementById('bt-angle-up')?.addEventListener('click', onAngleUp);
-  document.getElementById('bt-angle-down')?.addEventListener('click', onAngleDown);
+  document.getElementById('bt-angle-up')?.addEventListener('pointerdown',   (e) => { e.preventDefault(); startAngle('up'); });
+  document.getElementById('bt-angle-down')?.addEventListener('pointerdown', (e) => { e.preventDefault(); startAngle('down'); });
   document.getElementById('bt-fire')?.addEventListener('click', onFire);
   document.getElementById('bt-cancel')?.addEventListener('click', onCancel);
   document.getElementById('bt-end-turn')?.addEventListener('click', onEndTurn);
@@ -706,6 +704,13 @@ export function createBattleScene(
     // Power meter oscillation (local, 0.8 Hz)
     if (state.phase === 'charging' && isMyTurn()) {
       powerVal = (Math.sin(t * Math.PI * 1.6) + 1) / 2;
+    }
+
+    // Continuous angle adjustment while button held
+    if (angleDir && isMyTurn() && state.phase === 'charging') {
+      const delta = (angleDir === 'up' ? 1 : -1) * ANGLE_RATE * dt;
+      barrelAngle = Math.max(ANGLE_MIN, Math.min(ANGLE_MAX, barrelAngle + delta));
+      updateAngleDisplay();
     }
 
     // Continuous movement while button held
@@ -798,6 +803,8 @@ export function createBattleScene(
     if (cpuTimer) clearTimeout(cpuTimer);
     document.removeEventListener('pointerup',     stopMove);
     document.removeEventListener('pointercancel', stopMove);
+    document.removeEventListener('pointerup',     stopAngle);
+    document.removeEventListener('pointercancel', stopAngle);
     channel.destroy();
     canvas.remove();
     document.getElementById('bt-topbar')?.remove();
