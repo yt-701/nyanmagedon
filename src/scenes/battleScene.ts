@@ -1,6 +1,6 @@
 import type { BattleState, GameStartInfo, TankState, Projectile } from '../game/gameTypes';
 import {
-  GROUND_Y, createInitialState, opponentId, CPU_PLAYER_ID,
+  GROUND_Y, GRAVITY, createInitialState, opponentId, CPU_PLAYER_ID,
   applyMoveContinuous, applyFacingChange, applyFire, applyUseSkill, applyEndTurn,
   tickProjectile, applyDamage,
 } from '../game/battleLogic';
@@ -262,16 +262,51 @@ function drawPowerMeter(ctx: CanvasRenderingContext2D, cx: number, powerValue: n
   ctx.fillText(`POWER  ${Math.round(powerValue * 100)}%`, cx, by - 2);
 }
 
+// ── Trajectory guide (shows briefly right after firing) ───────────────
+
+const GUIDE_SHOW_SECS = 0.65;  // how long the guide is visible
+const GUIDE_SIM_SECS  = 0.42;  // how many seconds of arc to preview
+const GUIDE_DOTS      = 18;
+
+interface FireInfo { x0: number; y0: number; vx: number; vy: number; firedAt: number }
+
+function drawTrajectoryGuide(ctx: CanvasRenderingContext2D, fi: FireInfo, nowMs: number) {
+  const age = (nowMs - fi.firedAt) / 1000;
+  if (age > GUIDE_SHOW_SECS) return;
+  const fadeAlpha = 1 - age / GUIDE_SHOW_SECS;
+
+  ctx.save();
+  for (let i = 0; i < GUIDE_DOTS; i++) {
+    const simT = (i / (GUIDE_DOTS - 1)) * GUIDE_SIM_SECS;
+    const px = fi.x0 + fi.vx * simT;
+    const py = fi.y0 + fi.vy * simT + 0.5 * GRAVITY * simT * simT;
+    if (py > GROUND_Y) break;
+
+    // Dots get smaller and more transparent toward the end
+    const dotFade = 1 - i / GUIDE_DOTS;
+    const alpha   = fadeAlpha * dotFade * 0.9;
+    const r       = Math.max(0.8, 3.5 - i * 0.15);
+
+    ctx.save();
+    glow(ctx, `rgba(6,182,212,${alpha * 0.7})`, 8);
+    ctx.fillStyle = `rgba(165,243,252,${alpha})`;
+    ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+    noGlow(ctx);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 // ── Projectile ────────────────────────────────────────────────────────
 
 function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, t: number) {
   ctx.save();
-  glow(ctx, 'rgba(251,191,36,0.9)', 22);
+  glow(ctx, 'rgba(251,191,36,0.9)', 14);
   ctx.fillStyle = `hsl(${40 + t * 180 % 30},100%,65%)`;
-  ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
   noGlow(ctx);
   ctx.fillStyle = '#fff9';
-  ctx.beginPath(); ctx.arc(p.x - 2, p.y - 2, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(p.x - 1, p.y - 1, 1.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
@@ -499,6 +534,7 @@ export function createBattleScene(
   let powerVal    = 0;
   let movingDir: 'left' | 'right' | null = null;
   let lastMoveSend = 0;
+  let fireInfo: FireInfo | null = null;
   let t         = 0, lastTime = 0, rafId = 0;
   const explosions: Explosion[] = [];
 
@@ -533,6 +569,7 @@ export function createBattleScene(
       state = { ...state, tanks: { ...state.tanks, [oppId]: { ...state.tanks[oppId], x: evt.newX, energy: evt.newEnergy } } };
     } else if (evt.type === 'FIRE') {
       state = { ...state, projectile: { x: evt.startX, y: evt.startY, vx: evt.vx, vy: evt.vy, canBounce: evt.bounce, bounced: false, power: evt.power }, phase: 'animating' };
+      fireInfo = { x0: evt.startX, y0: evt.startY, vx: evt.vx, vy: evt.vy, firedAt: performance.now() };
     } else if (evt.type === 'USE_SKILL') {
       state = evt.resultState;
     } else if (evt.type === 'END_TURN') {
@@ -560,6 +597,7 @@ export function createBattleScene(
     if (!next.projectile) return;
     const p = next.projectile;
     channel.send({ type: 'FIRE', vx: p.vx, vy: p.vy, startX: p.x, startY: p.y, power: p.power, bounce: p.canBounce });
+    fireInfo = { x0: p.x, y0: p.y, vx: p.vx, vy: p.vy, firedAt: performance.now() };
     state = next;
   }
 
@@ -695,6 +733,7 @@ export function createBattleScene(
       }
     }
 
+    if (fireInfo) drawTrajectoryGuide(ctx, fireInfo, now);
     if (state.projectile) drawProjectile(ctx, state.projectile, t);
     explosions.forEach(e => drawExplosion(ctx, e));
 

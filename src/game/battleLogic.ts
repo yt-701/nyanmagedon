@@ -10,7 +10,7 @@ export const MOVE_SPEED       = 48;   // px/s during hold (1/4 of original 190)
 export const ENERGY_DRAIN_RATE = 55;  // energy/s while moving
 export const TANK_HIT_W       = 12;  // half-width of tank hitbox (1/4 of original 48)
 export const TANK_HIT_TOP     = 23;  // how far above GROUND_Y the hitbox extends (1/4 of 90)
-export const GRAVITY          = 400; // px/s²
+export const GRAVITY          = 680; // px/s²
 export const MAX_SPEED        = 700; // px/s at power=1
 
 // ── Initial state ─────────────────────────────────────────────────────
