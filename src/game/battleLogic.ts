@@ -134,6 +134,8 @@ function log(state: BattleState, msg: string): BattleState {
 
 // ── Move (continuous, call each frame while button is held) ──────────
 
+const SLOPE_BLOCK_TAN = Math.tan(80 * Math.PI / 180); // ≈ 5.67 (80° slope)
+
 export function applyMoveContinuous(
   state: BattleState, direction: 'left' | 'right', dt: number,
 ): BattleState | null {
@@ -141,10 +143,18 @@ export function applyMoveContinuous(
   const tank = state.tanks[id];
   if (!tank || tank.energy <= 0 || state.phase !== 'pre_shot') return null;
 
+  const dxSign    = direction === 'right' ? 1 : -1;
+  const currentY  = getTerrainY(state.terrain, tank.x);
+  const aheadY    = getTerrainY(state.terrain, tank.x + dxSign * 4);
+  // Positive = uphill in movement direction (canvas Y decreases = higher on screen)
+  const uphillSlope = (currentY - aheadY) / 4;
+
+  if (uphillSlope > SLOPE_BLOCK_TAN) return null; // too steep, blocked
+
   const energyCost = ENERGY_DRAIN_RATE * dt;
   const actualCost = Math.min(energyCost, tank.energy);
   const frac       = actualCost / ENERGY_DRAIN_RATE;
-  const dx         = (direction === 'right' ? 1 : -1) * MOVE_SPEED * frac;
+  const dx         = dxSign * MOVE_SPEED * frac;
   const newX       = Math.max(FIELD_MIN_X, Math.min(FIELD_MAX_X, tank.x + dx));
   const newEnergy  = Math.max(0, tank.energy - actualCost);
 
@@ -177,10 +187,15 @@ export function barrelTipScreen(tank: TankState, angle: number, terrain: number[
 export function calcShot(
   tank: TankState, power: number, angle: number, canBounce: boolean, terrain: number[],
 ): Projectile {
+  // Convert body-relative barrel angle to world angle using tank slope
+  const dy_dx     = (getTerrainY(terrain, tank.x + 13) - getTerrainY(terrain, tank.x - 13)) / 26;
+  const slopeAng  = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, Math.atan(dy_dx)));
+  const worldAngle = angle - slopeAng * tank.facing;
+
   const speed = (100 + power * MAX_SPEED) * 1.25;
-  const vx    = speed * Math.cos(angle) * tank.facing;
-  const vy    = -speed * Math.sin(angle);
-  const tip   = barrelTipScreen(tank, angle, terrain);
+  const vx    = speed * Math.cos(worldAngle) * tank.facing;
+  const vy    = -speed * Math.sin(worldAngle);
+  const tip   = barrelTipScreen(tank, worldAngle, terrain);
   return { x: tip.x, y: tip.y, vx, vy, canBounce, bounced: false, power };
 }
 

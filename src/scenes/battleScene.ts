@@ -183,13 +183,12 @@ function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: Ta
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
   ctx.beginPath(); ctx.roundRect(-21, -21, 42, 6, 4); ctx.fill();
 
-  // Barrel — angle is world-relative, so compensate for tank tilt
+  // Barrel — angle is body-relative; no compensation (barrel follows tank tilt)
   const f = tank.facing;
   const bAngle = barrelAngle ?? Math.PI / 5;
-  const effectiveBAngle = bAngle - slopeAngle; // cancel out tilt so world angle stays constant
   ctx.save();
   ctx.translate(f * 21, -14);          // barrel root
-  ctx.rotate(-effectiveBAngle * f);    // elevate (up = negative canvas y)
+  ctx.rotate(-bAngle * f);             // elevate relative to tank body
   ctx.fillStyle = '#15803d';
   ctx.beginPath(); ctx.roundRect(f > 0 ? 0 : -38, -4, 38, 8, 4); ctx.fill();
   ctx.save();
@@ -338,12 +337,15 @@ function drawChargingGuide(
   angle: number,
   terrain: number[],
 ) {
-  const f       = tank.facing;
-  const groundY = getTerrainY(terrain, tank.x);
-  const bx = tank.x + f * (BARREL_ROOT_LOCAL + BARREL_LEN_LOCAL * Math.cos(angle)) * TANK_SCALE;
-  const by = groundY - (14 + BARREL_LEN_LOCAL * Math.sin(angle)) * TANK_SCALE;
-  const vx = GUIDE_SPEED * Math.cos(angle) * f;
-  const vy = -GUIDE_SPEED * Math.sin(angle);
+  const f        = tank.facing;
+  const groundY  = getTerrainY(terrain, tank.x);
+  const dy_dx    = (getTerrainY(terrain, tank.x + 13) - getTerrainY(terrain, tank.x - 13)) / 26;
+  const slopeAng = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, Math.atan(dy_dx)));
+  const worldAngle = angle - slopeAng * f; // body-relative → world angle
+  const bx = tank.x + f * (BARREL_ROOT_LOCAL + BARREL_LEN_LOCAL * Math.cos(worldAngle)) * TANK_SCALE;
+  const by = groundY - (14 + BARREL_LEN_LOCAL * Math.sin(worldAngle)) * TANK_SCALE;
+  const vx = GUIDE_SPEED * Math.cos(worldAngle) * f;
+  const vy = -GUIDE_SPEED * Math.sin(worldAngle);
 
   ctx.save();
   for (let i = 0; i < GUIDE_DOTS; i++) {
