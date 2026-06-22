@@ -1,4 +1,4 @@
-import type { BattleState, TankState, TurnPhase, Projectile, TerrainPoint } from './gameTypes';
+import type { BattleState, TankState, TurnPhase, Projectile } from './gameTypes';
 import type { GameStartInfo } from './gameTypes';
 import { STARTER_HAND } from './skillDefs';
 
@@ -31,33 +31,49 @@ function hashStr(str: string): number {
   return h >>> 0;
 }
 
-function generateTerrain(seed: number): TerrainPoint[] {
+function generateTerrain(seed: number): number[] {
   const r = seededRng(seed);
   const B = GROUND_Y, TOP = 245;
-  return [
+  const sparse = [
     { x: 0,   y: B },
     { x: 80,  y: B },
-    { x: 190, y: B - Math.round(r() * 25) },
-    { x: 310, y: B - Math.round(55 + r() * 85) },
-    { x: 420, y: Math.round(TOP + r() * (B - TOP - 70)) },
-    { x: 480, y: B - Math.round(r() * 60) },
-    { x: 560, y: Math.round(TOP + r() * (B - TOP - 70)) },
-    { x: 660, y: B - Math.round(55 + r() * 85) },
-    { x: 770, y: B - Math.round(r() * 25) },
+    { x: 190, y: B - r() * 25 },
+    { x: 310, y: B - (55 + r() * 85) },
+    { x: 420, y: TOP + r() * (B - TOP - 70) },
+    { x: 480, y: B - r() * 60 },
+    { x: 560, y: TOP + r() * (B - TOP - 70) },
+    { x: 660, y: B - (55 + r() * 85) },
+    { x: 770, y: B - r() * 25 },
     { x: 880, y: B },
     { x: 960, y: B },
   ];
-}
-
-export function getTerrainY(terrain: TerrainPoint[], x: number): number {
-  if (x <= terrain[0].x) return terrain[0].y;
-  for (let i = 0; i < terrain.length - 1; i++) {
-    if (x <= terrain[i + 1].x) {
-      const t = (x - terrain[i].x) / (terrain[i + 1].x - terrain[i].x);
-      return terrain[i].y + t * (terrain[i + 1].y - terrain[i].y);
+  const terrain = new Array<number>(961).fill(B);
+  for (let i = 0; i < sparse.length - 1; i++) {
+    const p0 = sparse[i], p1 = sparse[i + 1];
+    for (let x = Math.round(p0.x); x <= Math.round(p1.x); x++) {
+      const t = (x - p0.x) / (p1.x - p0.x);
+      terrain[x] = p0.y + t * (p1.y - p0.y);
     }
   }
-  return terrain[terrain.length - 1].y;
+  return terrain;
+}
+
+export function getTerrainY(terrain: number[], x: number): number {
+  return terrain[Math.max(0, Math.min(960, Math.round(x)))];
+}
+
+export function applyExplosion(terrain: number[], hitX: number, hitY: number, radius: number): number[] {
+  const next = terrain.slice();
+  const r2   = radius * radius;
+  const x0   = Math.max(0,   Math.ceil(hitX - radius));
+  const x1   = Math.min(960, Math.floor(hitX + radius));
+  for (let x = x0; x <= x1; x++) {
+    const dx    = x - hitX;
+    const depth = Math.sqrt(r2 - dx * dx);
+    const newY  = hitY + depth;
+    if (newY > next[x]) next[x] = Math.min(newY, 522);
+  }
+  return next;
 }
 
 // ── Initial state ─────────────────────────────────────────────────────
@@ -149,7 +165,7 @@ export function applyFacingChange(state: BattleState): BattleState {
 
 // ── Shoot ────────────────────────────────────────────────────────────
 
-export function barrelTipScreen(tank: TankState, angle: number, terrain: TerrainPoint[]): { x: number; y: number } {
+export function barrelTipScreen(tank: TankState, angle: number, terrain: number[]): { x: number; y: number } {
   const f = tank.facing;
   const groundY = getTerrainY(terrain, tank.x);
   return {
@@ -159,7 +175,7 @@ export function barrelTipScreen(tank: TankState, angle: number, terrain: Terrain
 }
 
 export function calcShot(
-  tank: TankState, power: number, angle: number, canBounce: boolean, terrain: TerrainPoint[],
+  tank: TankState, power: number, angle: number, canBounce: boolean, terrain: number[],
 ): Projectile {
   const speed = (100 + power * MAX_SPEED) * 1.25;
   const vx    = speed * Math.cos(angle) * tank.facing;
@@ -239,12 +255,16 @@ export function tickProjectile(
     }
     const apEffects = activeT.effects.filter(e => e.type !== 'ap_round');
     s = updateTank(s, activeId(s), { effects: apEffects });
+    // Terrain crater at impact
+    s = { ...s, terrain: applyExplosion(s.terrain, nx, oppGY, 28) };
     s = { ...s, projectile: null, phase: 'post_shot' };
     return { state: s, hit: { targetId: oppId, damage, missed: hasSmoke } };
   }
 
   if (outOfBounds) {
-    const s = { ...state, projectile: null, phase: 'post_shot' as TurnPhase };
+    const impactY = getTerrainY(state.terrain, nx);
+    const terrain = applyExplosion(state.terrain, nx, impactY, 30);
+    const s = { ...state, terrain, projectile: null, phase: 'post_shot' as TurnPhase };
     return { state: s, hit: null };
   }
 

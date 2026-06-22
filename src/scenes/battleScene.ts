@@ -1,4 +1,4 @@
-import type { BattleState, GameStartInfo, TankState, Projectile, TerrainPoint } from '../game/gameTypes';
+import type { BattleState, GameStartInfo, TankState, Projectile } from '../game/gameTypes';
 import {
   GROUND_Y, GRAVITY, BARREL_ROOT_LOCAL, BARREL_LEN_LOCAL, TANK_SCALE,
   createInitialState, opponentId, CPU_PLAYER_ID, getTerrainY,
@@ -80,17 +80,19 @@ function drawBg(ctx: CanvasRenderingContext2D, t: number) {
 
 // ── Terrain drawing ───────────────────────────────────────────────────
 
-function drawTerrain(ctx: CanvasRenderingContext2D, terrain: TerrainPoint[]) {
+function drawTerrain(ctx: CanvasRenderingContext2D, terrain: number[]) {
   ctx.save();
 
   // Filled polygon
   ctx.beginPath();
   ctx.moveTo(0, H);
-  for (const pt of terrain) ctx.lineTo(pt.x, pt.y);
-  ctx.lineTo(W, H);
+  ctx.lineTo(0, terrain[0]);
+  for (let x = 1; x < terrain.length; x++) ctx.lineTo(x, terrain[x]);
+  ctx.lineTo(960, H);
   ctx.closePath();
 
-  const minY = Math.min(...terrain.map(p => p.y));
+  let minY = H;
+  for (const y of terrain) if (y < minY) minY = y;
   const grad = ctx.createLinearGradient(0, minY, 0, H);
   grad.addColorStop(0,   'rgba(2,38,9,0.97)');
   grad.addColorStop(0.5, 'rgba(1,18,4,0.99)');
@@ -117,8 +119,8 @@ function drawTerrain(ctx: CanvasRenderingContext2D, terrain: TerrainPoint[]) {
     ctx.strokeStyle = `rgba(74,222,128,${alpha})`;
     ctx.lineWidth = lw;
     ctx.beginPath();
-    ctx.moveTo(terrain[0].x, terrain[0].y);
-    for (let i = 1; i < terrain.length; i++) ctx.lineTo(terrain[i].x, terrain[i].y);
+    ctx.moveTo(0, terrain[0]);
+    for (let x = 1; x < terrain.length; x++) ctx.lineTo(x, terrain[x]);
     ctx.stroke();
     noGlow(ctx);
     ctx.restore();
@@ -327,7 +329,7 @@ function drawChargingGuide(
   tank: TankState,
   _power: number,
   angle: number,
-  terrain: TerrainPoint[],
+  terrain: number[],
 ) {
   const f       = tank.facing;
   const groundY = getTerrainY(terrain, tank.x);
@@ -788,11 +790,13 @@ export function createBattleScene(
       const { state: next, hit } = tickProjectile(state, dt);
       if (hit) {
         state = applyDamage(next, hit);
-        explosions.push({ x: state.tanks[hit.targetId]?.x ?? 0, y: GROUND_Y - 40, age: 0 });
-        if (!isMyTurn() && state.phase !== 'animating') {
-          // Sync resolved state to opponent only if we are the active player
-        }
+        const tx = state.tanks[hit.targetId]?.x ?? 0;
+        explosions.push({ x: tx, y: getTerrainY(state.terrain, tx) - 10, age: 0 });
       } else {
+        if (!next.projectile && state.projectile) {
+          // Ground hit — play explosion at last projectile position
+          explosions.push({ x: state.projectile.x, y: state.projectile.y, age: 0 });
+        }
         state = next;
       }
     }
