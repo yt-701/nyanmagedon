@@ -1,11 +1,17 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+html {
+  height: 100%;
+  background: #000;
+}
+
 body {
   background: #000;
   overflow: hidden;
   display: flex;
   justify-content: center;
   align-items: center;
+  width: 100vw;
   height: 100vh;
   font-family: 'Hiragino Kaku Gothic ProN','Hiragino Sans','Noto Sans JP','Yu Gothic UI',system-ui,sans-serif;
 }
@@ -15,8 +21,8 @@ body {
   width: 960px;
   height: 540px;
   overflow: hidden;
-  border-radius: 12px;
-  box-shadow: 0 0 80px rgba(0,0,0,0.9);
+  /* transform-origin stays at center; JS sets scale via transform */
+  transform-origin: center center;
 }
 
 #nyan-container canvas {

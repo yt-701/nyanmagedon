@@ -8,6 +8,14 @@ const container = document.createElement('div');
 container.id = 'nyan-container';
 document.body.appendChild(container);
 
+// Scale 960×540 to fill the viewport while preserving aspect ratio
+function resizeContainer(): void {
+  const scale = Math.min(window.innerWidth / 960, window.innerHeight / 540);
+  container.style.transform = `scale(${scale})`;
+}
+window.addEventListener('resize', resizeContainer);
+resizeContainer();
+
 let stopCurrent: (() => void) | null = null;
 
 function goTitle() {
