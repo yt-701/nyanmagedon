@@ -131,10 +131,15 @@ function drawTerrain(ctx: CanvasRenderingContext2D, terrain: number[]) {
 
 // ── Tank drawing ──────────────────────────────────────────────────────
 
-function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: TankState, isActive: boolean, groundY: number, barrelAngle = Math.PI / 5) {
+function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: TankState, isActive: boolean, groundY: number, terrain: number[], barrelAngle?: number) {
   const S = 0.25;
+  // Slope angle: sample terrain ±13px (≈ half tank width in screen coords)
+  const dy_dx = (getTerrainY(terrain, cx + 13) - getTerrainY(terrain, cx - 13)) / 26;
+  const slopeAngle = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, Math.atan(dy_dx)));
+
   ctx.save();
   ctx.translate(cx, groundY);
+  ctx.rotate(slopeAngle); // tilt tank body with slope
   ctx.scale(S, S);
 
   // Active glow ring
@@ -178,11 +183,13 @@ function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: Ta
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
   ctx.beginPath(); ctx.roundRect(-21, -21, 42, 6, 4); ctx.fill();
 
-  // Barrel (rotates by barrelAngle elevation)
+  // Barrel — angle is world-relative, so compensate for tank tilt
   const f = tank.facing;
+  const bAngle = barrelAngle ?? Math.PI / 5;
+  const effectiveBAngle = bAngle - slopeAngle; // cancel out tilt so world angle stays constant
   ctx.save();
   ctx.translate(f * 21, -14);          // barrel root
-  ctx.rotate(-barrelAngle * f);        // elevate (up = negative canvas y)
+  ctx.rotate(-effectiveBAngle * f);    // elevate (up = negative canvas y)
   ctx.fillStyle = '#15803d';
   ctx.beginPath(); ctx.roundRect(f > 0 ? 0 : -38, -4, 38, 8, 4); ctx.fill();
   ctx.save();
@@ -661,8 +668,6 @@ export function createBattleScene(
 
   function onShoot() {
     if (!isMyTurn() || state.phase !== 'pre_shot') return;
-    barrelAngle = ANGLE_DEFAULT;
-    updateAngleDisplay();
     state = { ...state, phase: 'charging' };
   }
 
@@ -817,8 +822,8 @@ export function createBattleScene(
     const p1gy = getTerrainY(state.terrain, p1.x);
     const p2gy = getTerrainY(state.terrain, p2.x);
     const myAngle = isMyTurn() && state.phase === 'charging' ? barrelAngle : undefined;
-    drawTank(ctx, p1.x, t, p1, state.activeIdx === 0, p1gy, info.myPlayerId === p1id ? myAngle : undefined);
-    drawTank(ctx, p2.x, t, p2, state.activeIdx === 1, p2gy, info.myPlayerId === p2id ? myAngle : undefined);
+    drawTank(ctx, p1.x, t, p1, state.activeIdx === 0, p1gy, state.terrain, info.myPlayerId === p1id ? myAngle : undefined);
+    drawTank(ctx, p2.x, t, p2, state.activeIdx === 1, p2gy, state.terrain, info.myPlayerId === p2id ? myAngle : undefined);
     drawTankHpBar(ctx, p1.x, p1, p1gy);
     drawTankHpBar(ctx, p2.x, p2, p2gy);
 
