@@ -1,7 +1,7 @@
 import type { BattleState, GameStartInfo, TankState, Projectile } from '../game/gameTypes';
 import {
   GROUND_Y, createInitialState, opponentId, CPU_PLAYER_ID,
-  applyMove, applyFire, applyUseSkill, applyEndTurn,
+  applyMoveContinuous, applyFire, applyUseSkill, applyEndTurn,
   tickProjectile, applyDamage,
 } from '../game/battleLogic';
 import { SKILL_DEFS } from '../game/skillDefs';
@@ -493,7 +493,9 @@ export function createBattleScene(
   // Game state
   let state: BattleState = createInitialState(info);
   info.fighters.findIndex(f => f.id === info.myPlayerId);
-  let powerVal  = 0;
+  let powerVal    = 0;
+  let movingDir: 'left' | 'right' | null = null;
+  let lastMoveSend = 0;
   let t         = 0, lastTime = 0, rafId = 0;
   const explosions: Explosion[] = [];
 
@@ -538,15 +540,6 @@ export function createBattleScene(
   });
 
   // ── Action handlers ───────────────────────────────────────────────
-  function onMove(dir: 'left' | 'right') {
-    if (!isMyTurn() || state.phase !== 'pre_shot') return;
-    const next = applyMove(state, dir);
-    if (!next) return;
-    const tank = next.tanks[info.myPlayerId];
-    channel.send({ type: 'MOVE', newX: tank.x, newEnergy: tank.energy });
-    state = next;
-  }
-
   function onShoot() {
     if (!isMyTurn() || state.phase !== 'pre_shot') return;
     state = { ...state, phase: 'charging' };
@@ -582,9 +575,28 @@ export function createBattleScene(
     scheduleCpuTurn();
   }
 
-  // Wire up buttons
-  document.getElementById('bt-left')?.addEventListener('click', () => onMove('left'));
-  document.getElementById('bt-right')?.addEventListener('click', () => onMove('right'));
+  // Move buttons: hold to move continuously
+  function startMove(dir: 'left' | 'right') {
+    if (!isMyTurn() || state.phase !== 'pre_shot') return;
+    movingDir = dir;
+    lastMoveSend = 0;
+  }
+  function stopMove() {
+    if (!movingDir) return;
+    // Sync final position on release
+    const tank = state.tanks[info.myPlayerId];
+    if (tank) channel.send({ type: 'MOVE', newX: tank.x, newEnergy: tank.energy });
+    movingDir = null;
+  }
+
+  const leftBtn  = document.getElementById('bt-left');
+  const rightBtn = document.getElementById('bt-right');
+  leftBtn?.addEventListener('pointerdown',  (e) => { e.preventDefault(); startMove('left'); });
+  rightBtn?.addEventListener('pointerdown', (e) => { e.preventDefault(); startMove('right'); });
+  // Release anywhere stops movement
+  document.addEventListener('pointerup',   stopMove);
+  document.addEventListener('pointercancel', stopMove);
+
   document.getElementById('bt-shoot')?.addEventListener('click', onShoot);
   document.getElementById('bt-fire')?.addEventListener('click', onFire);
   document.getElementById('bt-cancel')?.addEventListener('click', onCancel);
@@ -608,6 +620,25 @@ export function createBattleScene(
     // Power meter oscillation (local, 0.8 Hz)
     if (state.phase === 'charging' && isMyTurn()) {
       powerVal = (Math.sin(t * Math.PI * 1.6) + 1) / 2;
+    }
+
+    // Continuous movement while button held
+    if (movingDir && isMyTurn() && state.phase === 'pre_shot') {
+      const next = applyMoveContinuous(state, movingDir, dt);
+      if (next) {
+        state = next;
+        // Throttle: sync position every 50 ms
+        if (now - lastMoveSend >= 50) {
+          const tank = state.tanks[info.myPlayerId];
+          channel.send({ type: 'MOVE', newX: tank.x, newEnergy: tank.energy });
+          lastMoveSend = now;
+        }
+      } else {
+        // Energy ran out — stop and sync final position
+        const tank = state.tanks[info.myPlayerId];
+        channel.send({ type: 'MOVE', newX: tank.x, newEnergy: tank.energy });
+        movingDir = null;
+      }
     }
 
     // Projectile physics
@@ -677,6 +708,8 @@ export function createBattleScene(
   return () => {
     cancelAnimationFrame(rafId);
     if (cpuTimer) clearTimeout(cpuTimer);
+    document.removeEventListener('pointerup',     stopMove);
+    document.removeEventListener('pointercancel', stopMove);
     channel.destroy();
     canvas.remove();
     document.getElementById('bt-topbar')?.remove();

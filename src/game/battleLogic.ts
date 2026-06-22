@@ -3,15 +3,15 @@ import type { GameStartInfo } from './gameTypes';
 import { STARTER_HAND } from './skillDefs';
 
 // ── Constants ─────────────────────────────────────────────────────────
-export const GROUND_Y     = 380;   // y coordinate of ground surface
-export const FIELD_MIN_X  = 80;
-export const FIELD_MAX_X  = 880;
-export const MOVE_STEP    = 50;    // px per click
-export const MOVE_COST    = 25;    // energy per step
-export const TANK_HIT_W   = 48;   // half-width of tank hitbox
-export const TANK_HIT_TOP = 90;   // how far above GROUND_Y the hitbox extends
-export const GRAVITY      = 400;   // px/s²
-export const MAX_SPEED    = 700;   // px/s at power=1
+export const GROUND_Y         = 380;  // y coordinate of ground surface
+export const FIELD_MIN_X      = 80;
+export const FIELD_MAX_X      = 880;
+export const MOVE_SPEED       = 190;  // px/s during hold
+export const ENERGY_DRAIN_RATE = 55;  // energy/s while moving
+export const TANK_HIT_W       = 48;  // half-width of tank hitbox
+export const TANK_HIT_TOP     = 90;  // how far above GROUND_Y the hitbox extends
+export const GRAVITY          = 400; // px/s²
+export const MAX_SPEED        = 700; // px/s at power=1
 
 // ── Initial state ─────────────────────────────────────────────────────
 
@@ -77,23 +77,24 @@ function refreshFacing(state: BattleState): BattleState {
   return s;
 }
 
-// ── Move ─────────────────────────────────────────────────────────────
+// ── Move (continuous, call each frame while button is held) ──────────
 
-export function applyMove(
-  state: BattleState, direction: 'left' | 'right',
+export function applyMoveContinuous(
+  state: BattleState, direction: 'left' | 'right', dt: number,
 ): BattleState | null {
   const id   = activeId(state);
   const tank = state.tanks[id];
-  if (!tank || tank.energy < MOVE_COST) return null;
-  if (state.phase !== 'pre_shot') return null;
+  if (!tank || tank.energy <= 0 || state.phase !== 'pre_shot') return null;
 
-  const dx   = direction === 'right' ? MOVE_STEP : -MOVE_STEP;
-  const newX = Math.max(FIELD_MIN_X, Math.min(FIELD_MAX_X, tank.x + dx));
-  if (newX === tank.x) return null;
+  const energyCost = ENERGY_DRAIN_RATE * dt;
+  const actualCost = Math.min(energyCost, tank.energy);
+  const frac       = actualCost / ENERGY_DRAIN_RATE;
+  const dx         = (direction === 'right' ? 1 : -1) * MOVE_SPEED * frac;
+  const newX       = Math.max(FIELD_MIN_X, Math.min(FIELD_MAX_X, tank.x + dx));
+  const newEnergy  = Math.max(0, tank.energy - actualCost);
 
-  let s = updateTank(state, id, { x: newX, energy: tank.energy - MOVE_COST });
+  let s = updateTank(state, id, { x: newX, energy: newEnergy });
   s = refreshFacing(s);
-  s = log(s, `${tank.name} が${direction === 'right' ? '右' : '左'}へ移動`);
   return s;
 }
 
