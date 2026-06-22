@@ -114,7 +114,7 @@ export function barrelTipScreen(tank: TankState, angle: number): { x: number; y:
 export function calcShot(
   tank: TankState, power: number, angle: number, canBounce: boolean,
 ): Projectile {
-  const speed = 100 + power * MAX_SPEED;
+  const speed = (100 + power * MAX_SPEED) * 1.25;
   const vx    = speed * Math.cos(angle) * tank.facing;
   const vy    = -speed * Math.sin(angle);
   const tip   = barrelTipScreen(tank, angle);
