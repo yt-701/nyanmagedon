@@ -505,6 +505,7 @@ function updateUI(
   powerValue: number,
   isMyTurn: boolean,
   selectedCards: number[],
+  onToggleSkill: (i: number) => void,
 ) {
   const [p1id, p2id] = state.playerOrder;
   const p1 = state.tanks[p1id], p2 = state.tanks[p2id];
@@ -556,7 +557,7 @@ function updateUI(
     (document.getElementById('bt-left')  as HTMLButtonElement).disabled = !canMove;
     (document.getElementById('bt-right') as HTMLButtonElement).disabled = !canMove;
     // Skills
-    renderSkills(myTank.hand, selectedCards);
+    renderSkills(myTank.hand, selectedCards, onToggleSkill);
   } else if (state.phase === 'charging') {
     showPanel('bt-panel-charge');
     const pct = Math.round(powerValue * 100);
@@ -572,20 +573,29 @@ function updateUI(
   }
 }
 
-function renderSkills(hand: string[], selected: number[]) {
+let _skillsHandSig = '';
+let _skillsSelSig  = '';
+
+function renderSkills(hand: string[], selected: number[], onToggle: (i: number) => void) {
   const row = document.getElementById('bt-skills');
   if (!row) return;
+  const hs = hand.join('\x00');
+  const ss = selected.join(',');
+  if (hs === _skillsHandSig && ss === _skillsSelSig) return; // nothing changed
+  _skillsHandSig = hs; _skillsSelSig = ss;
+
   row.innerHTML = hand.map((sid, idx) => {
     const def = SKILL_DEFS[sid as keyof typeof SKILL_DEFS];
     if (!def) return '';
     const active = selected.includes(idx);
-    return `
-      <button class="bt-skill-card${active ? ' bt-skill-card--active' : ''}" data-idx="${idx}" title="${def.description}">
+    return `<button class="bt-skill-card${active ? ' bt-skill-card--active' : ''}" data-idx="${idx}" title="${def.description}">
         <span class="bt-skill-emoji">${def.emoji}</span>
         <span class="bt-skill-name">${def.nameJa}</span>
-      </button>
-    `;
+      </button>`;
   }).join('');
+  row.querySelectorAll<HTMLElement>('.bt-skill-card').forEach(btn => {
+    btn.addEventListener('click', () => onToggle(Number(btn.dataset.idx)));
+  });
 }
 
 // ── Game over overlay ─────────────────────────────────────────────────
@@ -763,16 +773,13 @@ export function createBattleScene(
   document.getElementById('bt-end-turn')?.addEventListener('click', onEndTurn);
   document.getElementById('bt-end-turn2')?.addEventListener('click', onEndTurn);
 
-  // Skill button delegation — toggle active state; apply on fire
-  document.getElementById('bt-skills')?.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('.bt-skill-card') as HTMLElement | null;
-    if (!btn || !isMyTurn() || state.phase !== 'pre_shot') return;
-    const idx = Number(btn.dataset.idx);
+  function toggleSkill(idx: number) {
+    if (!isMyTurn() || state.phase !== 'pre_shot') return;
     const pos = selectedCards.indexOf(idx);
     if (pos >= 0) selectedCards.splice(pos, 1);
     else selectedCards.push(idx);
-    renderSkills(state.tanks[info.myPlayerId]?.hand ?? [], selectedCards);
-  });
+    _skillsSelSig = ''; // invalidate cache so renderSkills re-renders immediately next frame
+  }
 
   // ── Game loop ─────────────────────────────────────────────────────
   let gameOverShown = false;
@@ -863,7 +870,7 @@ export function createBattleScene(
     state.projectiles.forEach(p => drawProjectile(ctx, p, t));
     explosions.forEach(e => drawExplosion(ctx, e));
 
-    updateUI(state, info.myPlayerId, powerVal, isMyTurn(), selectedCards);
+    updateUI(state, info.myPlayerId, powerVal, isMyTurn(), selectedCards, toggleSkill);
 
     // Game over
     if (state.phase === 'game_over' && !gameOverShown) {
