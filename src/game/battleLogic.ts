@@ -4,6 +4,7 @@ import { SKILL_POOL } from './skillDefs';
 
 // ── Constants ─────────────────────────────────────────────────────────
 export const GROUND_Y         = 380;  // y coordinate of ground surface
+export const VOID_Y           = 444;  // void boundary (top of bottom UI = 540 - 96)
 export const FIELD_MIN_X      = 80;
 export const FIELD_MAX_X      = 880;
 export const MOVE_SPEED       = 48;   // px/s during hold (1/4 of original 190)
@@ -69,7 +70,7 @@ function carveCircle(terrain: number[], cx: number, cy: number, r: number): void
   for (let x = x0; x <= x1; x++) {
     const dx  = x - cx;
     const newY = cy + Math.sqrt(r2 - dx * dx);
-    if (newY > terrain[x]) terrain[x] = Math.min(newY, 522);
+    if (newY > terrain[x]) terrain[x] = Math.min(newY, VOID_Y);
   }
 }
 
@@ -256,8 +257,8 @@ export interface HitResult {
 
 export function tickProjectile(
   state: BattleState, dt: number,
-): { state: BattleState; hit: HitResult | null; newExplosions: { x: number; y: number }[] } {
-  if (state.projectiles.length === 0) return { state, hit: null, newExplosions: [] };
+): { state: BattleState; hit: HitResult | null; newExplosions: { x: number; y: number }[]; voidKills: string[] } {
+  if (state.projectiles.length === 0) return { state, hit: null, newExplosions: [], voidKills: [] };
 
   const oppId   = opponentId(state);
   const oppTank = state.tanks[oppId];
@@ -315,12 +316,22 @@ export function tickProjectile(
     remaining.push({ ...p, x: nx, y: ny, vy: nvy });
   }
 
+  // Check both tanks for void kills (terrain carved to VOID_Y)
+  const voidKills: string[] = [];
+  for (const pid of state.playerOrder) {
+    const tank = state.tanks[pid];
+    if (tank && tank.hp > 0 && getTerrainY(terrain, tank.x) >= VOID_Y) {
+      voidKills.push(pid);
+    }
+  }
+
   const done  = remaining.length === 0;
   const phase = done ? 'post_shot' as TurnPhase : state.phase;
   return {
     state: { ...state, projectiles: remaining, terrain, phase },
     hit: firstHit,
     newExplosions,
+    voidKills,
   };
 }
 

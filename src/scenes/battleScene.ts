@@ -1,6 +1,6 @@
 import type { BattleState, GameStartInfo, TankState, Projectile } from '../game/gameTypes';
 import {
-  GROUND_Y, GRAVITY, BARREL_ROOT_LOCAL, BARREL_LEN_LOCAL, TANK_SCALE,
+  GROUND_Y, VOID_Y, GRAVITY, BARREL_ROOT_LOCAL, BARREL_LEN_LOCAL, TANK_SCALE,
   createInitialState, opponentId, CPU_PLAYER_ID, getTerrainY,
   applyMoveContinuous, applyFacingChange, applyFire, applyUseSkill, applyEndTurn,
   tickProjectile, applyDamage,
@@ -44,11 +44,11 @@ function drawBg(ctx: CanvasRenderingContext2D, t: number) {
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, W, GROUND_Y);
 
-  // Underground
-  const gg = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+  // Underground (up to void boundary)
+  const gg = ctx.createLinearGradient(0, GROUND_Y, 0, VOID_Y);
   gg.addColorStop(0, '#78350f'); gg.addColorStop(1, '#1c0803');
   ctx.fillStyle = gg;
-  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.fillRect(0, GROUND_Y, W, VOID_Y - GROUND_Y);
 
   // Scrolling clouds
   const cloudData: { x: number; y: number; s: number }[] = [
@@ -87,20 +87,42 @@ function drawBg(ctx: CanvasRenderingContext2D, t: number) {
 
 // ── Terrain drawing ───────────────────────────────────────────────────
 
+function drawVoidZone(ctx: CanvasRenderingContext2D) {
+  const stripH = 20;
+  const y0 = VOID_Y - stripH;
+  // Gradient fade-in from transparent to danger red
+  const grad = ctx.createLinearGradient(0, y0, 0, VOID_Y);
+  grad.addColorStop(0, 'rgba(220,38,38,0)');
+  grad.addColorStop(1, 'rgba(220,38,38,0.55)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, y0, W, stripH);
+  // Diagonal danger stripes
+  ctx.save();
+  ctx.strokeStyle = 'rgba(251,191,36,0.35)';
+  ctx.lineWidth = 3;
+  for (let x = -stripH; x < W + stripH; x += 16) {
+    ctx.beginPath();
+    ctx.moveTo(x, y0);
+    ctx.lineTo(x + stripH, VOID_Y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawTerrain(ctx: CanvasRenderingContext2D, terrain: number[]) {
   ctx.save();
 
-  // Filled polygon — earthy brown
+  // Filled polygon — earthy brown (down to void boundary)
   ctx.beginPath();
-  ctx.moveTo(0, H);
+  ctx.moveTo(0, VOID_Y);
   ctx.lineTo(0, terrain[0]);
   for (let x = 1; x < terrain.length; x++) ctx.lineTo(x, terrain[x]);
-  ctx.lineTo(960, H);
+  ctx.lineTo(960, VOID_Y);
   ctx.closePath();
 
-  let minY = H;
+  let minY = VOID_Y;
   for (const y of terrain) if (y < minY) minY = y;
-  const grad = ctx.createLinearGradient(0, minY, 0, H);
+  const grad = ctx.createLinearGradient(0, minY, 0, VOID_Y);
   grad.addColorStop(0,   '#92400e');
   grad.addColorStop(0.4, '#78350f');
   grad.addColorStop(1,   '#1c0803');
@@ -807,11 +829,19 @@ export function createBattleScene(
       const next = applyMoveContinuous(state, movingDir, dt);
       if (next) {
         state = next;
-        // Throttle: sync position every 50 ms
-        if (now - lastMoveSend >= 50) {
-          const tank = state.tanks[info.myPlayerId];
-          channel.send({ type: 'MOVE', newX: tank.x, newEnergy: tank.energy });
-          lastMoveSend = now;
+        // Void check: player walked into void → instant kill
+        const movedTank = state.tanks[info.myPlayerId];
+        if (movedTank && getTerrainY(state.terrain, movedTank.x) >= VOID_Y) {
+          state = applyDamage(state, { targetId: info.myPlayerId, damage: movedTank.hp, missed: false });
+          channel.send({ type: 'SYNC', state });
+          movingDir = null;
+        } else {
+          // Throttle: sync position every 50 ms
+          if (now - lastMoveSend >= 50) {
+            const tank = state.tanks[info.myPlayerId];
+            channel.send({ type: 'MOVE', newX: tank.x, newEnergy: tank.energy });
+            lastMoveSend = now;
+          }
         }
       } else {
         // Energy ran out — stop and sync final position
@@ -823,12 +853,17 @@ export function createBattleScene(
 
     // Projectile physics
     if (state.phase === 'animating' && state.projectiles.length > 0) {
-      const { state: next, hit, newExplosions } = tickProjectile(state, dt);
-      if (hit) {
-        state = applyDamage(next, hit);
-      } else {
-        state = next;
+      const { state: next, hit, newExplosions, voidKills } = tickProjectile(state, dt);
+      let s = next;
+      // Void kills first (instant death from terrain collapse)
+      for (const pid of voidKills) {
+        const tank = s.tanks[pid];
+        if (tank && tank.hp > 0) {
+          s = applyDamage(s, { targetId: pid, damage: tank.hp, missed: false });
+        }
       }
+      if (hit) s = applyDamage(s, hit);
+      state = s;
       newExplosions.forEach(e => explosions.push({ x: e.x, y: e.y, age: 0 }));
     }
 
@@ -838,9 +873,14 @@ export function createBattleScene(
       if (explosions[i].age >= 1) explosions.splice(i, 1);
     }
 
-    // Draw
+    // Draw — clip to game area (exclude bottom UI zone)
     ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, VOID_Y);
+    ctx.clip();
     drawBg(ctx, t);
+    drawVoidZone(ctx);
     drawTerrain(ctx, state.terrain);
 
     const [p1id, p2id] = state.playerOrder;
@@ -870,6 +910,7 @@ export function createBattleScene(
 
     state.projectiles.forEach(p => drawProjectile(ctx, p, t));
     explosions.forEach(e => drawExplosion(ctx, e));
+    ctx.restore(); // end game-area clip
 
     updateUI(state, info.myPlayerId, powerVal, isMyTurn(), selectedCards, toggleSkill);
 
