@@ -8,16 +8,9 @@ export type TurnPhase =
   | 'waiting'    // opponent's turn (local player is passive)
   | 'game_over';
 
-export type SkillId =
-  | 'boost_engine'
-  | 'ap_round'
-  | 'repair_kit'
-  | 'smoke_screen'
-  | 'teleport'
-  | 'bounce_shot'
-  | 'energy_drain';
+export type SkillId = 'shot_nyan' | 'penetrate_nyan' | 'explo_nyan';
 
-export type EffectType = 'ap_round' | 'smoke' | 'bounce';
+export type EffectType = 'triple_shot' | 'penetrate' | 'big_explosion';
 
 export interface ActiveEffect {
   type:      EffectType;
@@ -38,25 +31,26 @@ export interface TankState {
 }
 
 export interface Projectile {
-  x:         number;
-  y:         number;
-  vx:        number;
-  vy:        number;
-  canBounce: boolean; // bounce_shot effect active
-  bounced:   boolean; // true after first bounce occurred
-  power:     number;  // stored for damage calc
+  x:           number;
+  y:           number;
+  vx:          number;
+  vy:          number;
+  power:       number;
+  penetrating: boolean; // passes through terrain
+  bigExplosion: boolean; // 2x explosion radius
+  damageMult:  number;  // damage multiplier (1 = normal, 0.75 = triple shot)
 }
 
 export interface BattleState {
-  tanks:        Record<string, TankState>; // keyed by playerId
-  playerOrder:  string[];                  // [p1Id, p2Id]
-  activeIdx:    number;                    // 0 or 1
-  phase:        TurnPhase;
-  turn:         number;
-  projectile:   Projectile | null;
-  log:          string[];
-  winner:       string | null;
-  terrain:      number[]; // terrain[x] = surface Y at pixel x (0–960)
+  tanks:       Record<string, TankState>; // keyed by playerId
+  playerOrder: string[];                  // [p1Id, p2Id]
+  activeIdx:   number;                    // 0 or 1
+  phase:       TurnPhase;
+  turn:        number;
+  projectiles: Projectile[];              // all in-flight projectiles
+  log:         string[];
+  winner:      string | null;
+  terrain:     number[]; // terrain[x] = surface Y at pixel x (0–960)
 }
 
 export interface GameStartInfo {
@@ -67,7 +61,7 @@ export interface GameStartInfo {
 
 export type GameEvent =
   | { type: 'MOVE';      newX: number; newEnergy: number }
-  | { type: 'FIRE';      vx: number; vy: number; startX: number; startY: number; power: number; bounce: boolean }
+  | { type: 'FIRE';      projectiles: Projectile[] }
   | { type: 'USE_SKILL'; handIdx: number; resultState: BattleState }
   | { type: 'END_TURN';  resultState: BattleState }
   | { type: 'SYNC';      state: BattleState };

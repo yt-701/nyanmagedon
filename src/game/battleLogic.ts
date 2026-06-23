@@ -1,6 +1,6 @@
-import type { BattleState, TankState, TurnPhase, Projectile } from './gameTypes';
+import type { BattleState, TankState, TurnPhase, Projectile, SkillId } from './gameTypes';
 import type { GameStartInfo } from './gameTypes';
-import { STARTER_HAND } from './skillDefs';
+import { SKILL_POOL } from './skillDefs';
 
 // ── Constants ─────────────────────────────────────────────────────────
 export const GROUND_Y         = 380;  // y coordinate of ground surface
@@ -110,7 +110,7 @@ export function createInitialState(info: GameStartInfo): BattleState {
     x, hp: 100, maxHp: 100,
     energy: 300, maxEnergy: 300,
     facing,
-    hand: [...STARTER_HAND],
+    hand: [...SKILL_POOL] as SkillId[],
     effects: [],
   });
 
@@ -125,7 +125,7 @@ export function createInitialState(info: GameStartInfo): BattleState {
     activeIdx: 0,
     phase: 'pre_shot',
     turn: 1,
-    projectile: null,
+    projectiles: [],
     log: ['バトルスタート！'],
     winner: null,
     terrain,
@@ -201,33 +201,48 @@ export function barrelTipScreen(tank: TankState, angle: number, terrain: number[
   };
 }
 
-export function calcShot(
-  tank: TankState, power: number, angle: number, canBounce: boolean, terrain: number[],
+function calcShot(
+  tank: TankState, power: number, angle: number, terrain: number[],
+  penetrating: boolean, bigExplosion: boolean, damageMult: number,
 ): Projectile {
-  // Convert body-relative barrel angle to world angle using tank slope
-  const dy_dx     = (getTerrainY(terrain, tank.x + 13) - getTerrainY(terrain, tank.x - 13)) / 26;
-  const slopeAng  = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, Math.atan(dy_dx)));
+  const dy_dx    = (getTerrainY(terrain, tank.x + 13) - getTerrainY(terrain, tank.x - 13)) / 26;
+  const slopeAng = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, Math.atan(dy_dx)));
   const worldAngle = angle - slopeAng * tank.facing;
-
   const speed = (100 + power * MAX_SPEED) * 1.25;
-  const vx    = speed * Math.cos(worldAngle) * tank.facing;
-  const vy    = -speed * Math.sin(worldAngle);
   const tip   = barrelTipScreen(tank, worldAngle, terrain);
-  return { x: tip.x, y: tip.y, vx, vy, canBounce, bounced: false, power };
+  return {
+    x: tip.x, y: tip.y,
+    vx: speed * Math.cos(worldAngle) * tank.facing,
+    vy: -speed * Math.sin(worldAngle),
+    power, penetrating, bigExplosion, damageMult,
+  };
 }
 
 export function applyFire(state: BattleState, power: number, angle: number): BattleState {
   const id   = activeId(state);
   const tank = state.tanks[id];
-  const hasBounce = tank.effects.some(e => e.type === 'bounce');
-  const proj  = calcShot(tank, power, angle, hasBounce, state.terrain);
-  // Consume bounce effect
-  const effects = hasBounce
-    ? tank.effects.filter(e => e.type !== 'bounce')
-    : tank.effects;
+
+  const hasTriple  = tank.effects.some(e => e.type === 'triple_shot');
+  const hasPen     = tank.effects.some(e => e.type === 'penetrate');
+  const hasBig     = tank.effects.some(e => e.type === 'big_explosion');
+  const damageMult = hasTriple ? 0.75 : 1;
+
+  const angles = hasTriple
+    ? [angle - 8 * Math.PI / 180, angle, angle + 8 * Math.PI / 180]
+    : [angle];
+
+  const projectiles = angles.map(a =>
+    calcShot(tank, power, a, state.terrain, hasPen, hasBig, damageMult),
+  );
+
+  const effects = tank.effects.filter(
+    e => e.type !== 'triple_shot' && e.type !== 'penetrate' && e.type !== 'big_explosion',
+  );
   let s = updateTank(state, id, { effects });
-  s = { ...s, projectile: proj, phase: 'animating' };
-  s = log(s, `${tank.name} が砲撃！ パワー ${Math.round(power * 100)}%`);
+  s = { ...s, projectiles, phase: 'animating' };
+
+  const tags = [hasTriple && '3連射', hasPen && '貫通', hasBig && '大爆発'].filter(Boolean).join('＋');
+  s = log(s, `${tank.name} が砲撃！ パワー ${Math.round(power * 100)}%${tags ? ` [${tags}]` : ''}`);
   return s;
 }
 
@@ -241,68 +256,59 @@ export interface HitResult {
 
 export function tickProjectile(
   state: BattleState, dt: number,
-): { state: BattleState; hit: HitResult | null } {
-  const p = state.projectile;
-  if (!p) return { state, hit: null };
+): { state: BattleState; hit: HitResult | null; newExplosions: { x: number; y: number }[] } {
+  if (state.projectiles.length === 0) return { state, hit: null, newExplosions: [] };
 
-  let nx = p.x + p.vx * dt;
-  let ny = p.y + p.vy * dt;
-  let nvy = p.vy + GRAVITY * dt;
-  let bounced = p.bounced;
-
-  const terrainY = getTerrainY(state.terrain, nx);
-
-  // Ground bounce (only if bounce_shot effect active and not yet bounced)
-  if (ny >= terrainY && p.canBounce && !bounced) {
-    ny  = terrainY - 1;
-    nvy = -Math.abs(nvy) * 0.6;
-    bounced = true;
-  }
-
-  // Out of bounds (hit terrain after bounce, or off canvas)
-  const outOfBounds = ny > terrainY + 5 || nx < -60 || nx > 1020;
-
-  // Hit check against opponent tank
   const oppId   = opponentId(state);
   const oppTank = state.tanks[oppId];
   const oppGY   = getTerrainY(state.terrain, oppTank.x);
-  const hitTop  = oppGY - TANK_HIT_TOP;
-  const inBox   =
-    Math.abs(nx - oppTank.x) < TANK_HIT_W &&
-    ny > hitTop && ny < oppGY + 5;
 
-  if (inBox) {
-    // Check smoke screen
-    const hasSmoke = oppTank.effects.some(e => e.type === 'smoke');
-    const activeT  = state.tanks[activeId(state)];
-    const hasAP    = activeT.effects.some(e => e.type === 'ap_round');
-    let damage     = Math.round(p.power * 25);
-    if (hasAP) damage = Math.round(damage * 1.5);
+  let terrain   = state.terrain;
+  let firstHit: HitResult | null = null;
+  const remaining: Projectile[] = [];
+  const newExplosions: { x: number; y: number }[] = [];
 
-    // Consume effects
-    let s = state;
-    if (hasSmoke) {
-      const newEffects = oppTank.effects.filter(e => e.type !== 'smoke');
-      s = updateTank(s, oppId, { effects: newEffects });
+  for (const p of state.projectiles) {
+    const nx  = p.x + p.vx * dt;
+    const ny  = p.y + p.vy * dt;
+    const nvy = p.vy + GRAVITY * dt;
+    const tY  = getTerrainY(terrain, nx);
+
+    // Tank hit
+    const hitTop = oppGY - TANK_HIT_TOP;
+    const inBox  = Math.abs(nx - oppTank.x) < TANK_HIT_W && ny > hitTop && ny < oppGY + 5;
+    if (inBox && firstHit === null) {
+      let damage = Math.round(p.power * 25 * p.damageMult);
+      if (p.bigExplosion) damage = Math.max(15, damage);
+      const explR = p.bigExplosion ? 56 : 28;
+      terrain = applyExplosion(terrain, nx, oppGY, explR);
+      newExplosions.push({ x: nx, y: oppGY });
+      firstHit = { targetId: oppId, damage, missed: false };
+      continue;
     }
-    const apEffects = activeT.effects.filter(e => e.type !== 'ap_round');
-    s = updateTank(s, activeId(s), { effects: apEffects });
-    // Terrain crater at impact
-    s = { ...s, terrain: applyExplosion(s.terrain, nx, oppGY, 28) };
-    s = { ...s, projectile: null, phase: 'post_shot' };
-    return { state: s, hit: { targetId: oppId, damage, missed: hasSmoke } };
+
+    const outOfBounds = nx < -60 || nx > 1020;
+    const hitGround   = !p.penetrating && ny > tY + 5;
+
+    if (outOfBounds || hitGround) {
+      if (hitGround) {
+        const explR = p.bigExplosion ? 60 : 30;
+        const impY  = getTerrainY(terrain, nx);
+        terrain = applyExplosion(terrain, nx, impY, explR);
+        newExplosions.push({ x: nx, y: ny });
+      }
+      continue;
+    }
+
+    remaining.push({ ...p, x: nx, y: ny, vy: nvy });
   }
 
-  if (outOfBounds) {
-    const impactY = getTerrainY(state.terrain, nx);
-    const terrain = applyExplosion(state.terrain, nx, impactY, 30);
-    const s = { ...state, terrain, projectile: null, phase: 'post_shot' as TurnPhase };
-    return { state: s, hit: null };
-  }
-
+  const done  = remaining.length === 0;
+  const phase = done ? 'post_shot' as TurnPhase : state.phase;
   return {
-    state: { ...state, projectile: { ...p, x: nx, y: ny, vy: nvy, bounced } },
-    hit: null,
+    state: { ...state, projectiles: remaining, terrain, phase },
+    hit: firstHit,
+    newExplosions,
   };
 }
 
@@ -340,44 +346,22 @@ export function applyUseSkill(state: BattleState, handIdx: number): BattleState 
   let s = updateTank(state, id, { hand: newHand });
 
   switch (skillId) {
-    case 'boost_engine':
-      s = updateTank(s, id, { energy: Math.min(tank.maxEnergy, tank.energy + 60) });
-      s = log(s, `${tank.name} がブーストエンジン発動！ エネルギー+60`);
-      break;
-    case 'ap_round': {
-      const effects = [...tank.effects.filter(e => e.type !== 'ap_round'), { type: 'ap_round' as const, turnsLeft: 1 }];
+    case 'shot_nyan': {
+      const effects = [...tank.effects, { type: 'triple_shot' as const, turnsLeft: 1 }];
       s = updateTank(s, id, { effects });
-      s = log(s, `${tank.name} が徹甲弾装填！ 次の砲撃1.5倍`);
+      s = log(s, `${tank.name} がショットニャン！ 次の砲撃が3連射に`);
       break;
     }
-    case 'repair_kit':
-      s = updateTank(s, id, { hp: Math.min(tank.maxHp, tank.hp + 30) });
-      s = log(s, `${tank.name} が修理！ HP+30`);
-      break;
-    case 'smoke_screen': {
-      const effects = [...tank.effects.filter(e => e.type !== 'smoke'), { type: 'smoke' as const, turnsLeft: 1 }];
+    case 'penetrate_nyan': {
+      const effects = [...tank.effects, { type: 'penetrate' as const, turnsLeft: 1 }];
       s = updateTank(s, id, { effects });
-      s = log(s, `${tank.name} がスモーク展開！ 次の砲弾を無効化`);
+      s = log(s, `${tank.name} が貫通ニャン！ 次の砲弾が地形を貫通`);
       break;
     }
-    case 'teleport': {
-      const newX = Math.round(FIELD_MIN_X + Math.random() * (FIELD_MAX_X - FIELD_MIN_X));
-      s = updateTank(s, id, { x: newX });
-      s = log(s, `${tank.name} がテレポート！`);
-      break;
-    }
-    case 'bounce_shot': {
-      const effects = [...tank.effects.filter(e => e.type !== 'bounce'), { type: 'bounce' as const, turnsLeft: 1 }];
+    case 'explo_nyan': {
+      const effects = [...tank.effects, { type: 'big_explosion' as const, turnsLeft: 1 }];
       s = updateTank(s, id, { effects });
-      s = log(s, `${tank.name} がバウンドショット装填！`);
-      break;
-    }
-    case 'energy_drain': {
-      const oppId = opponentId(state);
-      const opp   = s.tanks[oppId];
-      const newE  = Math.floor(opp.energy / 2);
-      s = updateTank(s, oppId, { energy: newE });
-      s = log(s, `${tank.name} がエネルギードレイン！ 相手エネルギー${opp.energy}→${newE}`);
+      s = log(s, `${tank.name} がエクスプローニャン！ 次の爆発が2倍`);
       break;
     }
   }
@@ -403,11 +387,11 @@ export function applyEndTurn(state: BattleState): BattleState {
   for (const [id, tank] of Object.entries(state.tanks)) {
     tanks[id] = tickEffects(tank);
   }
-  // Restore next player's energy
-  tanks[nextId] = { ...tanks[nextId], energy: nextTank.maxEnergy };
+  // Restore next player's energy and deal 3 fresh skill cards
+  tanks[nextId] = { ...tanks[nextId], energy: nextTank.maxEnergy, hand: [...SKILL_POOL] as SkillId[] };
 
   const newTurn = nextIdx === 0 ? state.turn + 1 : state.turn;
-  let s: BattleState = { ...state, tanks, activeIdx: nextIdx, phase: 'pre_shot', turn: newTurn, projectile: null };
+  let s: BattleState = { ...state, tanks, activeIdx: nextIdx, phase: 'pre_shot', turn: newTurn, projectiles: [] };
   s = log(s, `ターン${s.turn} — ${s.tanks[nextId].name} のターン`);
   return s;
 }

@@ -243,11 +243,11 @@ function drawTank(ctx: CanvasRenderingContext2D, cx: number, t: number, tank: Ta
   ctx.fillStyle = 'rgba(14,165,233,0.4)';
   ctx.beginPath(); ctx.roundRect(hx - 18, hy - 32, 36, 11, 4); ctx.fill();
 
-  // Smoke screen effect
-  if (tank.effects.some(e => e.type === 'smoke')) {
+  // Big explosion effect indicator
+  if (tank.effects.some(e => e.type === 'big_explosion')) {
     ctx.save();
-    glow(ctx, 'rgba(148,163,184,0.8)', 18);
-    ctx.strokeStyle = `rgba(148,163,184,${0.4 + Math.sin(t * 5) * 0.3})`;
+    glow(ctx, 'rgba(251,191,36,0.8)', 18);
+    ctx.strokeStyle = `rgba(251,191,36,${0.4 + Math.sin(t * 5) * 0.3})`;
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(0, -20, 68, 0, Math.PI * 2); ctx.stroke();
     noGlow(ctx);
@@ -663,7 +663,7 @@ export function createBattleScene(
       const oppId = opponentId(state);
       state = { ...state, tanks: { ...state.tanks, [oppId]: { ...state.tanks[oppId], x: evt.newX, energy: evt.newEnergy } } };
     } else if (evt.type === 'FIRE') {
-      state = { ...state, projectile: { x: evt.startX, y: evt.startY, vx: evt.vx, vy: evt.vy, canBounce: evt.bounce, bounced: false, power: evt.power }, phase: 'animating' };
+      state = { ...state, projectiles: evt.projectiles, phase: 'animating' };
     } else if (evt.type === 'USE_SKILL') {
       state = evt.resultState;
     } else if (evt.type === 'END_TURN') {
@@ -699,9 +699,8 @@ export function createBattleScene(
   function onFire() {
     if (!isMyTurn() || state.phase !== 'charging') return;
     const next = applyFire(state, powerVal, barrelAngle);
-    if (!next.projectile) return;
-    const p = next.projectile;
-    channel.send({ type: 'FIRE', vx: p.vx, vy: p.vy, startX: p.x, startY: p.y, power: p.power, bounce: p.canBounce });
+    if (next.projectiles.length === 0) return;
+    channel.send({ type: 'FIRE', projectiles: next.projectiles });
     state = next;
   }
 
@@ -805,19 +804,14 @@ export function createBattleScene(
     }
 
     // Projectile physics
-    if (state.phase === 'animating' && state.projectile) {
-      const { state: next, hit } = tickProjectile(state, dt);
+    if (state.phase === 'animating' && state.projectiles.length > 0) {
+      const { state: next, hit, newExplosions } = tickProjectile(state, dt);
       if (hit) {
         state = applyDamage(next, hit);
-        const tx = state.tanks[hit.targetId]?.x ?? 0;
-        explosions.push({ x: tx, y: getTerrainY(state.terrain, tx) - 10, age: 0 });
       } else {
-        if (!next.projectile && state.projectile) {
-          // Ground hit — play explosion at last projectile position
-          explosions.push({ x: state.projectile.x, y: state.projectile.y, age: 0 });
-        }
         state = next;
       }
+      newExplosions.forEach(e => explosions.push({ x: e.x, y: e.y, age: 0 }));
     }
 
     // Tick explosions
@@ -856,7 +850,7 @@ export function createBattleScene(
       }
     }
 
-    if (state.projectile) drawProjectile(ctx, state.projectile, t);
+    state.projectiles.forEach(p => drawProjectile(ctx, p, t));
     explosions.forEach(e => drawExplosion(ctx, e));
 
     updateUI(state, info.myPlayerId, powerVal, isMyTurn());
