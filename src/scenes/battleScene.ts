@@ -573,9 +573,18 @@ function updateUI(
   }
 }
 
+// '\x00' sentinel ensures first render always fires and empty-deselect is detectable
+let _skillsHandSig = '\x00';
+let _skillsSelSig  = '\x00';
+
 function renderSkills(hand: string[], selected: number[], onToggle: (i: number) => void) {
   const row = document.getElementById('bt-skills');
   if (!row) return;
+  const hs = hand.join('\x01');
+  const ss = String(selected);
+  if (hs === _skillsHandSig && ss === _skillsSelSig) return;
+  _skillsHandSig = hs; _skillsSelSig = ss;
+
   row.innerHTML = hand.map((sid, idx) => {
     const def = SKILL_DEFS[sid as keyof typeof SKILL_DEFS];
     if (!def) return '';
@@ -770,7 +779,7 @@ export function createBattleScene(
     const pos = selectedCards.indexOf(idx);
     if (pos >= 0) selectedCards.splice(pos, 1);
     else selectedCards.push(idx);
-    // no cache to invalidate — renderSkills re-renders every frame
+    // cache update happens in renderSkills next frame via sig comparison
   }
 
   // ── Game loop ─────────────────────────────────────────────────────
