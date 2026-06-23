@@ -427,12 +427,15 @@ function drawChargingGuide(
   _power: number,
   angle: number,
   terrain: number[],
+  platforms: FloatingPlatform[],
 ) {
   const f        = tank.facing;
-  const groundY  = getTerrainY(terrain, tank.x);
-  const dy_dx    = (getTerrainY(terrain, tank.x + 13) - getTerrainY(terrain, tank.x - 13)) / 26;
+  const groundY  = getEffectiveY(terrain, platforms, tank.x);
+  const leftY    = getEffectiveY(terrain, platforms, tank.x - 13);
+  const rightY   = getEffectiveY(terrain, platforms, tank.x + 13);
+  const dy_dx    = (rightY - leftY) / 26;
   const slopeAng = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, Math.atan(dy_dx)));
-  const worldAngle = angle - slopeAng * f; // body-relative → world angle
+  const worldAngle = angle - slopeAng * f;
   const bx = tank.x + f * (BARREL_ROOT_LOCAL + BARREL_LEN_LOCAL * Math.cos(worldAngle)) * TANK_SCALE;
   const by = groundY - (14 + BARREL_LEN_LOCAL * Math.sin(worldAngle)) * TANK_SCALE;
   const vx = GUIDE_SPEED * Math.cos(worldAngle) * f;
@@ -443,7 +446,7 @@ function drawChargingGuide(
     const simT = (i / (GUIDE_DOTS - 1)) * GUIDE_SIM_SECS;
     const px = bx + vx * simT;
     const py = by + vy * simT + 0.5 * GRAVITY * simT * simT;
-    if (py > getTerrainY(terrain, px) || px < 0 || px > W) break;
+    if (py > getEffectiveY(terrain, platforms, px) || px < 0 || px > W) break;
 
     const alpha = 0.85 * (1 - i / GUIDE_DOTS);
     const r     = Math.max(0.7, 3 - i * 0.1);
@@ -993,7 +996,7 @@ export function createBattleScene(
         } else if (state.phase === 'charging') {
           drawEnergyBar(ctx, myTank.x, myTank.energy, myTank.maxEnergy, myGY);
           drawPowerMeter(ctx, myTank.x, powerVal, myGY);
-          drawChargingGuide(ctx, myTank, powerVal, barrelAngle, state.terrain);
+          drawChargingGuide(ctx, myTank, powerVal, barrelAngle, state.terrain, state.platforms);
         }
       }
     }

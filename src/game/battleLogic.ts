@@ -98,18 +98,15 @@ function carvePlatformSurface(p: FloatingPlatform, cx: number, cy: number, r: nu
   return { ...p, surface: surf };
 }
 
-// Narrow tunnel carve for penetrating bullets: only columns where bullet is actually underground
-function tunnelPlatformSurface(p: FloatingPlatform, cx: number, cy: number, r: number): FloatingPlatform {
-  const r2 = r * r;
-  const x0 = Math.max(p.x, Math.ceil(cx - r));
-  const x1 = Math.min(p.x + p.w, Math.floor(cx + r));
+function tunnelPlatformSurface(p: FloatingPlatform, cx: number, cy: number, halfW: number, depth: number): FloatingPlatform {
+  const x0 = Math.max(p.x, Math.round(cx - halfW));
+  const x1 = Math.min(p.x + p.w, Math.round(cx + halfW));
   if (x0 > x1) return p;
   const surf = [...p.surface];
   for (let x = x0; x <= x1; x++) {
     const i = x - p.x;
-    if (cy < surf[i]) continue; // bullet above platform surface at this column
-    const dx = x - cx;
-    const newY = cy + Math.sqrt(r2 - dx * dx);
+    if (cy <= surf[i]) continue; // not underground at this column
+    const newY = cy + depth;
     if (newY > surf[i]) surf[i] = Math.min(newY, VOID_Y);
   }
   return { ...p, surface: surf };
@@ -162,15 +159,14 @@ function carveCircle(terrain: number[], cx: number, cy: number, r: number): void
   }
 }
 
-// Tunnel carve: only carves columns where bullet is at or below the terrain surface
-function carveTunnel(terrain: number[], cx: number, cy: number, r: number): void {
-  const r2 = r * r;
-  const x0 = Math.max(0, Math.ceil(cx - r));
-  const x1 = Math.min(960, Math.floor(cx + r));
+// Tunnel carve: rectangular cross-section, only where bullet is STRICTLY underground.
+// No horizontal spreading beyond halfW — prevents carving adjacent slopes the bullet didn't enter.
+function carveTunnel(terrain: number[], cx: number, cy: number, halfW: number, depth: number): void {
+  const x0 = Math.max(0, Math.round(cx - halfW));
+  const x1 = Math.min(960, Math.round(cx + halfW));
   for (let x = x0; x <= x1; x++) {
-    if (cy < terrain[x]) continue; // bullet above surface at this column — skip
-    const dx   = x - cx;
-    const newY = cy + Math.sqrt(r2 - dx * dx);
+    if (cy <= terrain[x]) continue; // not underground at this column — skip
+    const newY = cy + depth;
     if (newY > terrain[x]) terrain[x] = Math.min(newY, VOID_Y);
   }
 }
@@ -309,9 +305,9 @@ export function applyFacingChange(state: BattleState): BattleState {
 
 // ── Shoot ────────────────────────────────────────────────────────────
 
-export function barrelTipScreen(tank: TankState, angle: number, terrain: number[]): { x: number; y: number } {
+// groundY is passed in so callers can use getEffectiveY (terrain + platforms)
+export function barrelTipScreen(tank: TankState, angle: number, groundY: number): { x: number; y: number } {
   const f = tank.facing;
-  const groundY = getTerrainY(terrain, tank.x);
   return {
     x: tank.x + f * (BARREL_ROOT_LOCAL + BARREL_LEN_LOCAL * Math.cos(angle)) * TANK_SCALE,
     y: groundY - (14 + BARREL_LEN_LOCAL * Math.sin(angle)) * TANK_SCALE,
@@ -319,14 +315,18 @@ export function barrelTipScreen(tank: TankState, angle: number, terrain: number[
 }
 
 function calcShot(
-  tank: TankState, power: number, angle: number, terrain: number[],
+  tank: TankState, power: number, angle: number,
+  terrain: number[], platforms: FloatingPlatform[],
   penetrating: boolean, bigExplosion: boolean, damageMult: number,
 ): Projectile {
-  const dy_dx    = (getTerrainY(terrain, tank.x + 13) - getTerrainY(terrain, tank.x - 13)) / 26;
+  const gY    = getEffectiveY(terrain, platforms, tank.x);
+  const leftY = getEffectiveY(terrain, platforms, tank.x - 13);
+  const rightY= getEffectiveY(terrain, platforms, tank.x + 13);
+  const dy_dx    = (rightY - leftY) / 26;
   const slopeAng = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, Math.atan(dy_dx)));
   const worldAngle = angle - slopeAng * tank.facing;
   const speed = (100 + power * MAX_SPEED) * 1.25;
-  const tip   = barrelTipScreen(tank, worldAngle, terrain);
+  const tip   = barrelTipScreen(tank, worldAngle, gY);
   return {
     x: tip.x, y: tip.y,
     vx: speed * Math.cos(worldAngle) * tank.facing,
@@ -349,7 +349,7 @@ export function applyFire(state: BattleState, power: number, angle: number): Bat
     : [angle];
 
   const projectiles = angles.map(a =>
-    calcShot(tank, power, a, state.terrain, hasPen, hasBig, damageMult),
+    calcShot(tank, power, a, state.terrain, state.platforms, hasPen, hasBig, damageMult),
   );
 
   const effects = tank.effects.filter(
@@ -477,16 +477,16 @@ export function tickProjectile(
     }
 
     // Penetrating: carve terrain + platforms while underground
-    if (p.penetrating && ny > tY - 2) {
-      const r = p.bigExplosion ? 18 : 10;
+    if (p.penetrating && ny > tY) { // strictly underground
+      const halfW = p.bigExplosion ? 7 : 4;
+      const depth = p.bigExplosion ? 14 : 9;
       const next2 = terrain.slice();
-      carveTunnel(next2, nx, ny, r);
+      carveTunnel(next2, nx, ny, halfW, depth);
       terrain = next2;
-      // Also tunnel through platforms
       platforms = platforms.map(pl => {
         const surf = getPlatformSurfaceAt(pl, nx);
-        if (surf === Infinity || ny < surf) return pl;
-        return tunnelPlatformSurface(pl, nx, ny, r);
+        if (surf === Infinity || ny <= surf) return pl;
+        return tunnelPlatformSurface(pl, nx, ny, halfW, depth);
       });
     }
 
