@@ -623,12 +623,29 @@ function renderSkills(hand: string[], selected: number[], onToggle: (i: number) 
 
 // ── Game over overlay ─────────────────────────────────────────────────
 
-function showGameOver(container: HTMLElement, won: boolean, onBack: () => void): void {
+function showGameOver(
+  container: HTMLElement,
+  won: boolean,
+  deathReason: 'combat' | 'void_self',
+  killerName: string,
+  onBack: () => void,
+): void {
   const el = document.createElement('div');
   el.id = 'bt-gameover';
+  let title: string, sub: string;
+  if (won) {
+    title = '🎉 VICTORY!';
+    sub   = 'あなたの勝利！';
+  } else if (deathReason === 'void_self') {
+    title = '💀 足が滑った...';
+    sub   = '奈落に落下してしまった';
+  } else {
+    title = `💀 ${killerName}にやられた...`;
+    sub   = '次こそリベンジ！';
+  }
   el.innerHTML = `
-    <div class="bt-go-title">${won ? '🎉 VICTORY!' : '💀 DEFEAT'}</div>
-    <div class="bt-go-sub">${won ? 'あなたの勝利！' : '相手の勝利...'}</div>
+    <div class="bt-go-title">${title}</div>
+    <div class="bt-go-sub">${sub}</div>
     <button class="bt-go-btn" id="bt-go-btn">タイトルへ戻る</button>
   `;
   container.appendChild(el);
@@ -806,6 +823,7 @@ export function createBattleScene(
 
   // ── Game loop ─────────────────────────────────────────────────────
   let gameOverShown = false;
+  let deathReason: 'combat' | 'void_self' = 'combat';
 
   function frame(now: number) {
     const dt = Math.min((now - lastTime) / 1000, 0.05);
@@ -832,6 +850,7 @@ export function createBattleScene(
         // Void check: player walked into void → instant kill
         const movedTank = state.tanks[info.myPlayerId];
         if (movedTank && getTerrainY(state.terrain, movedTank.x) >= VOID_Y) {
+          deathReason = 'void_self';
           state = applyDamage(state, { targetId: info.myPlayerId, damage: movedTank.hp, missed: false });
           channel.send({ type: 'SYNC', state });
           movingDir = null;
@@ -917,7 +936,10 @@ export function createBattleScene(
     // Game over
     if (state.phase === 'game_over' && !gameOverShown) {
       gameOverShown = true;
-      setTimeout(() => showGameOver(container, state.winner === info.myPlayerId, onEnd), 800);
+      const won = state.winner === info.myPlayerId;
+      const killerTank = state.winner ? state.tanks[state.winner] : null;
+      const killerName = killerTank?.name ?? '相手';
+      setTimeout(() => showGameOver(container, won, deathReason, killerName, onEnd), 800);
     }
 
     rafId = requestAnimationFrame(frame);
