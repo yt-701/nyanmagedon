@@ -41,6 +41,21 @@ export interface Projectile {
   damageMult:  number;  // damage multiplier (1 = normal, 0.75 = triple shot)
 }
 
+export interface Tree {
+  x:           number;   // center x
+  baseY:       number;   // terrain surface Y at tree's x (bottom of trunk)
+  trunkHalfW:  number;   // collision half-width (~5 px)
+  height:      number;   // total visual height
+  destroyed:   boolean;
+}
+
+export interface FloatingPlatform {
+  x: number;  // left edge
+  y: number;  // top surface y (landing surface)
+  w: number;  // width
+  h: number;  // visual thickness
+}
+
 export interface BattleState {
   tanks:       Record<string, TankState>; // keyed by playerId
   playerOrder: string[];                  // [p1Id, p2Id]
@@ -51,6 +66,8 @@ export interface BattleState {
   log:         string[];
   winner:      string | null;
   terrain:     number[]; // terrain[x] = surface Y at pixel x (0–960)
+  trees:       Tree[];
+  platforms:   FloatingPlatform[];
 }
 
 export interface GameStartInfo {

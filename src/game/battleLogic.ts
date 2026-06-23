@@ -1,4 +1,4 @@
-import type { BattleState, TankState, TurnPhase, Projectile, SkillId } from './gameTypes';
+import type { BattleState, TankState, TurnPhase, Projectile, SkillId, Tree, FloatingPlatform } from './gameTypes';
 import type { GameStartInfo } from './gameTypes';
 import { SKILL_POOL } from './skillDefs';
 
@@ -63,6 +63,51 @@ export function getTerrainY(terrain: number[], x: number): number {
   return terrain[Math.max(0, Math.min(960, Math.round(x)))];
 }
 
+// Returns the highest surface (lowest Y) at x: terrain or platform top
+export function getEffectiveY(terrain: number[], platforms: FloatingPlatform[], x: number): number {
+  let y = getTerrainY(terrain, x);
+  for (const p of platforms) {
+    if (x >= p.x && x <= p.x + p.w && p.y < y) y = p.y;
+  }
+  return y;
+}
+
+function generateTrees(terrain: number[], rng: () => number): Tree[] {
+  const count = Math.floor(rng() * 4); // 0–3
+  const trees: Tree[] = [];
+  for (let i = 0; i < count; i++) {
+    let placed = false;
+    for (let attempt = 0; attempt < 30 && !placed; attempt++) {
+      const x = 140 + Math.floor(rng() * 680); // avoid spawn zones
+      if (Math.abs(x - 170) < 70 || Math.abs(x - 790) < 70) continue;
+      if (trees.some(t => Math.abs(t.x - x) < 90)) continue;
+      const baseY = getTerrainY(terrain, x);
+      if (baseY >= VOID_Y - 10) continue; // don't place on nearly-void terrain
+      trees.push({ x, baseY, trunkHalfW: 5, height: 42 + Math.floor(rng() * 28), destroyed: false });
+      placed = true;
+    }
+  }
+  return trees;
+}
+
+function generatePlatforms(rng: () => number): FloatingPlatform[] {
+  const count = Math.floor(rng() * 3); // 0–2
+  const platforms: FloatingPlatform[] = [];
+  for (let i = 0; i < count; i++) {
+    let placed = false;
+    for (let attempt = 0; attempt < 20 && !placed; attempt++) {
+      const w = 80 + Math.floor(rng() * 90);
+      const x = 80 + Math.floor(rng() * (800 - w));
+      const y = 160 + Math.floor(rng() * 140); // float above terrain
+      const h = 20 + Math.floor(rng() * 14);
+      if (platforms.some(p => x < p.x + p.w + 40 && x + w > p.x - 40)) continue;
+      platforms.push({ x, y, w, h });
+      placed = true;
+    }
+  }
+  return platforms;
+}
+
 function carveCircle(terrain: number[], cx: number, cy: number, r: number): void {
   const r2 = r * r;
   const x0 = Math.max(0,   Math.ceil(cx - r));
@@ -119,7 +164,11 @@ export function createInitialState(info: GameStartInfo): BattleState {
     [p1.id]:   mkTank(p1,   170,  1),
     [p2raw.id]: mkTank(p2raw, 790, -1),
   };
-  const terrain = generateTerrain(hashStr(info.fighters.map(f => f.id).join('')));
+  const mapSeed = hashStr(info.fighters.map(f => f.id).join(''));
+  const terrain  = generateTerrain(mapSeed);
+  const mapRng   = seededRng(mapSeed ^ 0xdeadbeef);
+  const trees    = generateTrees(terrain, mapRng);
+  const platforms = generatePlatforms(mapRng);
   return {
     tanks,
     playerOrder: [p1.id, p2raw.id],
@@ -130,6 +179,8 @@ export function createInitialState(info: GameStartInfo): BattleState {
     log: ['バトルスタート！'],
     winner: null,
     terrain,
+    trees,
+    platforms,
   };
 }
 
@@ -162,8 +213,8 @@ export function applyMoveContinuous(
   if (!tank || tank.energy <= 0 || state.phase !== 'pre_shot') return null;
 
   const dxSign    = direction === 'right' ? 1 : -1;
-  const currentY  = getTerrainY(state.terrain, tank.x);
-  const aheadY    = getTerrainY(state.terrain, tank.x + dxSign * 4);
+  const currentY  = getEffectiveY(state.terrain, state.platforms, tank.x);
+  const aheadY    = getEffectiveY(state.terrain, state.platforms, tank.x + dxSign * 4);
   // Positive = uphill in movement direction (canvas Y decreases = higher on screen)
   const uphillSlope = (currentY - aheadY) / 4;
 
@@ -174,8 +225,17 @@ export function applyMoveContinuous(
   const frac       = actualCost / ENERGY_DRAIN_RATE;
   const dx         = dxSign * MOVE_SPEED * frac;
   const newX       = Math.max(FIELD_MIN_X, Math.min(FIELD_MAX_X, tank.x + dx));
-  const newEnergy  = Math.max(0, tank.energy - actualCost);
 
+  // Check tree collision
+  for (const tree of state.trees) {
+    if (tree.destroyed) continue;
+    if (newX + TANK_HIT_W > tree.x - tree.trunkHalfW &&
+        newX - TANK_HIT_W < tree.x + tree.trunkHalfW) {
+      return null; // blocked by tree trunk
+    }
+  }
+
+  const newEnergy  = Math.max(0, tank.energy - actualCost);
   return updateTank(state, id, { x: newX, energy: newEnergy });
 }
 
@@ -262,12 +322,23 @@ export function tickProjectile(
 
   const oppId   = opponentId(state);
   const oppTank = state.tanks[oppId];
-  const oppGY   = getTerrainY(state.terrain, oppTank.x);
+  const oppGY   = getEffectiveY(state.terrain, state.platforms, oppTank.x);
 
   let terrain   = state.terrain;
+  let trees     = state.trees;
   let firstHit: HitResult | null = null;
   const remaining: Projectile[] = [];
   const newExplosions: { x: number; y: number }[] = [];
+
+  // Helper: destroy trees within explosion radius
+  function blastTrees(ex: number, ey: number, r: number): void {
+    trees = trees.map(tree => {
+      if (tree.destroyed) return tree;
+      const dx = tree.x - ex, dy = tree.baseY - ey;
+      return Math.sqrt(dx * dx + dy * dy) < r + tree.height * 0.5
+        ? { ...tree, destroyed: true } : tree;
+    });
+  }
 
   for (const p of state.projectiles) {
     const nx  = p.x + p.vx * dt;
@@ -283,8 +354,33 @@ export function tickProjectile(
       if (p.bigExplosion) damage = Math.max(15, damage);
       const explR = p.bigExplosion ? 56 : 28;
       terrain = applyExplosion(terrain, nx, oppGY, explR);
+      blastTrees(nx, oppGY, explR);
       newExplosions.push({ x: nx, y: oppGY });
       firstHit = { targetId: oppId, damage, missed: false };
+      continue;
+    }
+
+    // Floating platform collision
+    const hitPlatform = !p.penetrating && state.platforms.find(
+      pl => nx >= pl.x && nx <= pl.x + pl.w && ny > pl.y && p.y <= pl.y + 2,
+    );
+    if (hitPlatform) {
+      const explR  = p.bigExplosion ? 60 : 30;
+      const impY   = hitPlatform.y;
+      // Platforms don't carve but do create explosion + splash
+      blastTrees(nx, impY, explR);
+      newExplosions.push({ x: nx, y: impY });
+      if (firstHit === null) {
+        const dx   = oppTank.x - nx;
+        const dy   = oppGY - impY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < explR) {
+          const t = 1 - dist / explR;
+          let splash = Math.round((5 + t * 20) * p.damageMult);
+          if (p.bigExplosion) splash = Math.max(15, splash);
+          firstHit = { targetId: oppId, damage: splash, missed: false };
+        }
+      }
       continue;
     }
 
@@ -296,6 +392,7 @@ export function tickProjectile(
         const explR = p.bigExplosion ? 60 : 30;
         const impY  = getTerrainY(terrain, nx);
         terrain = applyExplosion(terrain, nx, impY, explR);
+        blastTrees(nx, impY, explR);
         newExplosions.push({ x: nx, y: ny });
         // Splash damage if opponent is within explosion radius
         if (firstHit === null) {
@@ -303,8 +400,8 @@ export function tickProjectile(
           const dy   = oppGY - impY;
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < explR) {
-            const t = 1 - dist / explR; // 1 at center, 0 at edge
-            let splash = Math.round((5 + t * 20) * p.damageMult); // 5–25
+            const t = 1 - dist / explR;
+            let splash = Math.round((5 + t * 20) * p.damageMult);
             if (p.bigExplosion) splash = Math.max(15, splash);
             firstHit = { targetId: oppId, damage: splash, missed: false };
           }
@@ -316,11 +413,11 @@ export function tickProjectile(
     remaining.push({ ...p, x: nx, y: ny, vy: nvy });
   }
 
-  // Check both tanks for void kills (terrain carved to VOID_Y)
+  // Void kills: check effective surface (terrain + platforms) for each tank
   const voidKills: string[] = [];
   for (const pid of state.playerOrder) {
     const tank = state.tanks[pid];
-    if (tank && tank.hp > 0 && getTerrainY(terrain, tank.x) >= VOID_Y) {
+    if (tank && tank.hp > 0 && getEffectiveY(terrain, state.platforms, tank.x) >= VOID_Y) {
       voidKills.push(pid);
     }
   }
@@ -328,7 +425,7 @@ export function tickProjectile(
   const done  = remaining.length === 0;
   const phase = done ? 'post_shot' as TurnPhase : state.phase;
   return {
-    state: { ...state, projectiles: remaining, terrain, phase },
+    state: { ...state, projectiles: remaining, terrain, trees, phase },
     hit: firstHit,
     newExplosions,
     voidKills,

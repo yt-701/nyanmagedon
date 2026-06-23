@@ -1,10 +1,11 @@
 import type { BattleState, GameStartInfo, TankState, Projectile } from '../game/gameTypes';
 import {
   GROUND_Y, VOID_Y, GRAVITY, BARREL_ROOT_LOCAL, BARREL_LEN_LOCAL, TANK_SCALE,
-  createInitialState, opponentId, CPU_PLAYER_ID, getTerrainY,
+  createInitialState, opponentId, CPU_PLAYER_ID, getTerrainY, getEffectiveY,
   applyMoveContinuous, applyFacingChange, applyFire, applyUseSkill, applyEndTurn,
   tickProjectile, applyDamage,
 } from '../game/battleLogic';
+import type { Tree, FloatingPlatform } from '../game/gameTypes';
 import { SKILL_DEFS } from '../game/skillDefs';
 import { GameChannel } from '../game/gameChannel';
 
@@ -148,6 +149,72 @@ function drawTerrain(ctx: CanvasRenderingContext2D, terrain: number[]) {
   for (let x = 1; x < terrain.length; x++) ctx.lineTo(x, terrain[x]);
   ctx.stroke();
 
+  ctx.restore();
+}
+
+// ── Floating platform drawing ─────────────────────────────────────────
+
+function drawPlatform(ctx: CanvasRenderingContext2D, p: FloatingPlatform) {
+  ctx.save();
+  // Rocky body
+  const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
+  grad.addColorStop(0,   '#92400e');
+  grad.addColorStop(0.5, '#78350f');
+  grad.addColorStop(1,   '#3d1a07');
+  ctx.fillStyle = grad;
+  // Slightly irregular shape (hand-drawn feel)
+  ctx.beginPath();
+  ctx.moveTo(p.x + 4,       p.y);
+  ctx.lineTo(p.x + p.w - 4, p.y);
+  ctx.lineTo(p.x + p.w + 2, p.y + p.h * 0.4);
+  ctx.lineTo(p.x + p.w - 2, p.y + p.h);
+  ctx.lineTo(p.x + 2,       p.y + p.h);
+  ctx.lineTo(p.x - 2,       p.y + p.h * 0.4);
+  ctx.closePath();
+  ctx.fill();
+  // Dark outline
+  ctx.strokeStyle = '#1c0803'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+  ctx.stroke();
+  // Grass on top
+  ctx.strokeStyle = '#84cc16'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(p.x + 4, p.y);
+  ctx.lineTo(p.x + p.w - 4, p.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Tree drawing ──────────────────────────────────────────────────────
+
+function drawTree(ctx: CanvasRenderingContext2D, tree: Tree) {
+  if (tree.destroyed) return;
+  ctx.save();
+  const tx = tree.x, ty = tree.baseY;
+  const th = tree.height;
+  const trunkH = th * 0.42;
+  const trunkW = tree.trunkHalfW * 2;
+
+  // Trunk
+  ctx.fillStyle = '#78350f';
+  ctx.strokeStyle = '#1c0803'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.rect(tx - trunkW * 0.5, ty - trunkH, trunkW, trunkH);
+  ctx.fill(); ctx.stroke();
+
+  // Canopy (doodle blob — layered circles)
+  const canopyY  = ty - trunkH;
+  const canopyR  = th * 0.38;
+  ctx.fillStyle   = '#16a34a';
+  ctx.strokeStyle = '#14532d'; ctx.lineWidth = 2.5;
+  for (const [ox, oy, r] of [
+    [0,  -canopyR * 0.55, canopyR],
+    [-canopyR * 0.55, 0, canopyR * 0.75],
+    [ canopyR * 0.55, 0, canopyR * 0.75],
+  ] as [number, number, number][]) {
+    ctx.beginPath();
+    ctx.arc(tx + ox, canopyY + oy, r, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -849,7 +916,7 @@ export function createBattleScene(
         state = next;
         // Void check: player walked into void → instant kill
         const movedTank = state.tanks[info.myPlayerId];
-        if (movedTank && getTerrainY(state.terrain, movedTank.x) >= VOID_Y) {
+        if (movedTank && getEffectiveY(state.terrain, state.platforms, movedTank.x) >= VOID_Y) {
           deathReason = 'void_self';
           state = applyDamage(state, { targetId: info.myPlayerId, damage: movedTank.hp, missed: false });
           channel.send({ type: 'SYNC', state });
@@ -901,11 +968,13 @@ export function createBattleScene(
     drawBg(ctx, t);
     drawVoidZone(ctx);
     drawTerrain(ctx, state.terrain);
+    state.platforms.forEach(p => drawPlatform(ctx, p));
+    state.trees.forEach(tree => drawTree(ctx, tree));
 
     const [p1id, p2id] = state.playerOrder;
     const p1 = state.tanks[p1id], p2 = state.tanks[p2id];
-    const p1gy = getTerrainY(state.terrain, p1.x);
-    const p2gy = getTerrainY(state.terrain, p2.x);
+    const p1gy = getEffectiveY(state.terrain, state.platforms, p1.x);
+    const p2gy = getEffectiveY(state.terrain, state.platforms, p2.x);
     const myAngle = isMyTurn() && state.phase === 'charging' ? barrelAngle : undefined;
     drawTank(ctx, p1.x, t, p1, state.activeIdx === 0, p1gy, state.terrain, info.myPlayerId === p1id ? myAngle : undefined);
     drawTank(ctx, p2.x, t, p2, state.activeIdx === 1, p2gy, state.terrain, info.myPlayerId === p2id ? myAngle : undefined);
@@ -916,7 +985,7 @@ export function createBattleScene(
     if (isMyTurn()) {
       const myTank = state.tanks[info.myPlayerId];
       if (myTank) {
-        const myGY = getTerrainY(state.terrain, myTank.x);
+        const myGY = getEffectiveY(state.terrain, state.platforms, myTank.x);
         if (state.phase === 'pre_shot') {
           drawEnergyBar(ctx, myTank.x, myTank.energy, myTank.maxEnergy, myGY);
         } else if (state.phase === 'charging') {
