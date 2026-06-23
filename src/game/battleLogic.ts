@@ -274,11 +274,11 @@ export function tickProjectile(
     const nvy = p.vy + GRAVITY * dt;
     const tY  = getTerrainY(terrain, nx);
 
-    // Tank hit
+    // Direct tank hit
     const hitTop = oppGY - TANK_HIT_TOP;
     const inBox  = Math.abs(nx - oppTank.x) < TANK_HIT_W && ny > hitTop && ny < oppGY + 5;
     if (inBox && firstHit === null) {
-      let damage = Math.round(p.power * 25 * p.damageMult);
+      let damage = Math.round(30 * p.damageMult);
       if (p.bigExplosion) damage = Math.max(15, damage);
       const explR = p.bigExplosion ? 56 : 28;
       terrain = applyExplosion(terrain, nx, oppGY, explR);
@@ -296,6 +296,18 @@ export function tickProjectile(
         const impY  = getTerrainY(terrain, nx);
         terrain = applyExplosion(terrain, nx, impY, explR);
         newExplosions.push({ x: nx, y: ny });
+        // Splash damage if opponent is within explosion radius
+        if (firstHit === null) {
+          const dx   = oppTank.x - nx;
+          const dy   = oppGY - impY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < explR) {
+            const t = 1 - dist / explR; // 1 at center, 0 at edge
+            let splash = Math.round((5 + t * 20) * p.damageMult); // 5–25
+            if (p.bigExplosion) splash = Math.max(15, splash);
+            firstHit = { targetId: oppId, damage: splash, missed: false };
+          }
+        }
       }
       continue;
     }
