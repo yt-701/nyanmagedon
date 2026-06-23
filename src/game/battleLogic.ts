@@ -360,6 +360,33 @@ export function tickProjectile(
       continue;
     }
 
+    // Tree hit
+    if (!p.penetrating) {
+      const hitTree = trees.find(tree => {
+        if (tree.destroyed) return false;
+        const canopyR = tree.height * 0.4;
+        return Math.abs(nx - tree.x) < canopyR && ny > tree.baseY - tree.height && ny < tree.baseY;
+      });
+      if (hitTree) {
+        const explR = p.bigExplosion ? 60 : 30;
+        terrain = applyExplosion(terrain, nx, ny, explR);
+        blastTrees(nx, ny, explR);
+        newExplosions.push({ x: nx, y: ny });
+        if (firstHit === null) {
+          const dx   = oppTank.x - nx;
+          const dy   = oppGY - ny;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < explR) {
+            const t = 1 - dist / explR;
+            let splash = Math.round((5 + t * 20) * p.damageMult);
+            if (p.bigExplosion) splash = Math.max(15, splash);
+            firstHit = { targetId: oppId, damage: splash, missed: false };
+          }
+        }
+        continue;
+      }
+    }
+
     // Floating platform collision
     const hitPlatform = !p.penetrating && state.platforms.find(
       pl => nx >= pl.x && nx <= pl.x + pl.w && ny > pl.y && p.y <= pl.y + 2,
