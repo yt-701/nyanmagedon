@@ -155,32 +155,34 @@ function drawTerrain(ctx: CanvasRenderingContext2D, terrain: number[]) {
 // ── Floating platform drawing ─────────────────────────────────────────
 
 function drawPlatform(ctx: CanvasRenderingContext2D, p: FloatingPlatform) {
+  if (!p.surface.some(s => s < VOID_Y)) return; // fully destroyed
   ctx.save();
-  // Rocky body
-  const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
+
+  const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h + 10);
   grad.addColorStop(0,   '#92400e');
   grad.addColorStop(0.5, '#78350f');
   grad.addColorStop(1,   '#3d1a07');
   ctx.fillStyle = grad;
-  // Slightly irregular shape (hand-drawn feel)
+
+  // Fill polygon: top follows surface[], bottom is surface[i]+h
   ctx.beginPath();
-  ctx.moveTo(p.x + 4,       p.y);
-  ctx.lineTo(p.x + p.w - 4, p.y);
-  ctx.lineTo(p.x + p.w + 2, p.y + p.h * 0.4);
-  ctx.lineTo(p.x + p.w - 2, p.y + p.h);
-  ctx.lineTo(p.x + 2,       p.y + p.h);
-  ctx.lineTo(p.x - 2,       p.y + p.h * 0.4);
+  ctx.moveTo(p.x, p.surface[0] + p.h);
+  for (let i = 0; i <= p.w; i++) ctx.lineTo(p.x + i, p.surface[i]);
+  for (let i = p.w; i >= 0; i--) ctx.lineTo(p.x + i, Math.min(p.surface[i] + p.h, VOID_Y));
   ctx.closePath();
   ctx.fill();
+
   // Dark outline
   ctx.strokeStyle = '#1c0803'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
   ctx.stroke();
-  // Grass on top
-  ctx.strokeStyle = '#84cc16'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+
+  // Grass strip on surface
+  ctx.strokeStyle = '#84cc16'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.moveTo(p.x + 4, p.y);
-  ctx.lineTo(p.x + p.w - 4, p.y);
+  ctx.moveTo(p.x, p.surface[0]);
+  for (let i = 1; i <= p.w; i++) ctx.lineTo(p.x + i, p.surface[i]);
   ctx.stroke();
+
   ctx.restore();
 }
 

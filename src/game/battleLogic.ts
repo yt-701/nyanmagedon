@@ -66,10 +66,53 @@ export function getTerrainY(terrain: number[], x: number): number {
 // Returns the highest surface (lowest Y) at x: terrain or platform top
 export function getEffectiveY(terrain: number[], platforms: FloatingPlatform[], x: number): number {
   let y = getTerrainY(terrain, x);
+  const xi = Math.round(x);
   for (const p of platforms) {
-    if (x >= p.x && x <= p.x + p.w && p.y < y) y = p.y;
+    if (xi >= p.x && xi <= p.x + p.w) {
+      const surf = p.surface[xi - p.x];
+      if (surf < y) y = surf;
+    }
   }
   return y;
+}
+
+function getPlatformSurfaceAt(p: FloatingPlatform, x: number): number {
+  const xi = Math.round(x);
+  if (xi < p.x || xi > p.x + p.w) return Infinity;
+  return p.surface[xi - p.x];
+}
+
+// Carve into a platform's surface array (like carveCircle but for platform surface)
+function carvePlatformSurface(p: FloatingPlatform, cx: number, cy: number, r: number): FloatingPlatform {
+  const r2 = r * r;
+  const x0 = Math.max(p.x, Math.ceil(cx - r));
+  const x1 = Math.min(p.x + p.w, Math.floor(cx + r));
+  if (x0 > x1) return p;
+  const surf = [...p.surface];
+  for (let x = x0; x <= x1; x++) {
+    const dx = x - cx;
+    const newY = cy + Math.sqrt(r2 - dx * dx);
+    const i = x - p.x;
+    if (newY > surf[i]) surf[i] = Math.min(newY, VOID_Y);
+  }
+  return { ...p, surface: surf };
+}
+
+// Narrow tunnel carve for penetrating bullets: only columns where bullet is actually underground
+function tunnelPlatformSurface(p: FloatingPlatform, cx: number, cy: number, r: number): FloatingPlatform {
+  const r2 = r * r;
+  const x0 = Math.max(p.x, Math.ceil(cx - r));
+  const x1 = Math.min(p.x + p.w, Math.floor(cx + r));
+  if (x0 > x1) return p;
+  const surf = [...p.surface];
+  for (let x = x0; x <= x1; x++) {
+    const i = x - p.x;
+    if (cy < surf[i]) continue; // bullet above platform surface at this column
+    const dx = x - cx;
+    const newY = cy + Math.sqrt(r2 - dx * dx);
+    if (newY > surf[i]) surf[i] = Math.min(newY, VOID_Y);
+  }
+  return { ...p, surface: surf };
 }
 
 function generateTrees(terrain: number[], rng: () => number): Tree[] {
@@ -101,7 +144,7 @@ function generatePlatforms(rng: () => number): FloatingPlatform[] {
       const y = 160 + Math.floor(rng() * 140); // float above terrain
       const h = 20 + Math.floor(rng() * 14);
       if (platforms.some(p => x < p.x + p.w + 40 && x + w > p.x - 40)) continue;
-      platforms.push({ x, y, w, h });
+      platforms.push({ x, y, w, h, surface: new Array<number>(w + 1).fill(y) });
       placed = true;
     }
   }
@@ -119,14 +162,13 @@ function carveCircle(terrain: number[], cx: number, cy: number, r: number): void
   }
 }
 
-// Tunnel carve: like carveCircle but skips columns where bullet is above surface
-// (prevents carving into uphill slopes adjacent to the bullet's path)
+// Tunnel carve: only carves columns where bullet is at or below the terrain surface
 function carveTunnel(terrain: number[], cx: number, cy: number, r: number): void {
   const r2 = r * r;
   const x0 = Math.max(0, Math.ceil(cx - r));
   const x1 = Math.min(960, Math.floor(cx + r));
   for (let x = x0; x <= x1; x++) {
-    if (cy < terrain[x] - 2) continue; // bullet is above this column's surface — skip
+    if (cy < terrain[x]) continue; // bullet above surface at this column — skip
     const dx   = x - cx;
     const newY = cy + Math.sqrt(r2 - dx * dx);
     if (newY > terrain[x]) terrain[x] = Math.min(newY, VOID_Y);
@@ -340,6 +382,7 @@ export function tickProjectile(
 
   let terrain   = state.terrain;
   let trees     = state.trees;
+  let platforms = state.platforms;
   let firstHit: HitResult | null = null;
   const remaining: Projectile[] = [];
   const newExplosions: { x: number; y: number }[] = [];
@@ -352,6 +395,11 @@ export function tickProjectile(
       return Math.sqrt(dx * dx + dy * dy) < r + tree.height * 0.5
         ? { ...tree, destroyed: true } : tree;
     });
+  }
+
+  // Helper: carve platform surfaces within explosion radius
+  function blastPlatforms(ex: number, ey: number, r: number): void {
+    platforms = platforms.map(p => carvePlatformSurface(p, ex, ey, r));
   }
 
   for (const p of state.projectiles) {
@@ -369,6 +417,7 @@ export function tickProjectile(
       const explR = p.bigExplosion ? 56 : 28;
       terrain = applyExplosion(terrain, nx, oppGY, explR);
       blastTrees(nx, oppGY, explR);
+      blastPlatforms(nx, oppGY, explR);
       newExplosions.push({ x: nx, y: oppGY });
       firstHit = { targetId: oppId, damage, missed: false };
       continue;
@@ -385,6 +434,7 @@ export function tickProjectile(
         const explR = p.bigExplosion ? 60 : 30;
         terrain = applyExplosion(terrain, nx, ny, explR);
         blastTrees(nx, ny, explR);
+        blastPlatforms(nx, ny, explR);
         newExplosions.push({ x: nx, y: ny });
         if (firstHit === null) {
           const dx   = oppTank.x - nx;
@@ -401,15 +451,16 @@ export function tickProjectile(
       }
     }
 
-    // Floating platform collision
-    const hitPlatform = !p.penetrating && state.platforms.find(
-      pl => nx >= pl.x && nx <= pl.x + pl.w && ny > pl.y && p.y <= pl.y + 2,
+    // Floating platform collision (use per-column surface)
+    const hitPlatform = !p.penetrating && platforms.find(
+      pl => nx >= pl.x && nx <= pl.x + pl.w &&
+            ny > getPlatformSurfaceAt(pl, nx) && p.y <= getPlatformSurfaceAt(pl, nx) + 4,
     );
     if (hitPlatform) {
-      const explR  = p.bigExplosion ? 60 : 30;
-      const impY   = hitPlatform.y;
-      // Platforms don't carve but do create explosion + splash
+      const explR = p.bigExplosion ? 60 : 30;
+      const impY  = getPlatformSurfaceAt(hitPlatform, nx);
       blastTrees(nx, impY, explR);
+      blastPlatforms(nx, impY, explR);
       newExplosions.push({ x: nx, y: impY });
       if (firstHit === null) {
         const dx   = oppTank.x - nx;
@@ -425,11 +476,18 @@ export function tickProjectile(
       continue;
     }
 
-    // Penetrating: carve terrain while underground (only where bullet is actually below surface)
+    // Penetrating: carve terrain + platforms while underground
     if (p.penetrating && ny > tY - 2) {
+      const r = p.bigExplosion ? 18 : 10;
       const next2 = terrain.slice();
-      carveTunnel(next2, nx, ny, p.bigExplosion ? 20 : 12);
+      carveTunnel(next2, nx, ny, r);
       terrain = next2;
+      // Also tunnel through platforms
+      platforms = platforms.map(pl => {
+        const surf = getPlatformSurfaceAt(pl, nx);
+        if (surf === Infinity || ny < surf) return pl;
+        return tunnelPlatformSurface(pl, nx, ny, r);
+      });
     }
 
     const outOfBounds = nx < -60 || nx > 1020 || ny >= VOID_Y;
@@ -441,6 +499,7 @@ export function tickProjectile(
         const impY  = getTerrainY(terrain, nx);
         terrain = applyExplosion(terrain, nx, impY, explR);
         blastTrees(nx, impY, explR);
+        blastPlatforms(nx, impY, explR);
         newExplosions.push({ x: nx, y: ny });
         // Splash damage if opponent is within explosion radius
         if (firstHit === null) {
@@ -473,7 +532,7 @@ export function tickProjectile(
   const done  = remaining.length === 0;
   const phase = done ? 'post_shot' as TurnPhase : state.phase;
   return {
-    state: { ...state, projectiles: remaining, terrain, trees, phase },
+    state: { ...state, projectiles: remaining, terrain, trees, platforms, phase },
     hit: firstHit,
     newExplosions,
     voidKills,

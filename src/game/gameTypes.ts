@@ -50,10 +50,11 @@ export interface Tree {
 }
 
 export interface FloatingPlatform {
-  x: number;  // left edge
-  y: number;  // top surface y (landing surface)
-  w: number;  // width
-  h: number;  // visual thickness
+  x: number;      // left edge (pixel)
+  y: number;      // original top surface y
+  w: number;      // width in pixels
+  h: number;      // visual thickness
+  surface: number[];  // surface[i] = current surface Y at column x+i (length = w+1)
 }
 
 export interface BattleState {
