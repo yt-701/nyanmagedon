@@ -573,17 +573,9 @@ function updateUI(
   }
 }
 
-let _skillsHandSig = '';
-let _skillsSelSig  = '';
-
 function renderSkills(hand: string[], selected: number[], onToggle: (i: number) => void) {
   const row = document.getElementById('bt-skills');
   if (!row) return;
-  const hs = hand.join('\x00');
-  const ss = selected.join(',');
-  if (hs === _skillsHandSig && ss === _skillsSelSig) return; // nothing changed
-  _skillsHandSig = hs; _skillsSelSig = ss;
-
   row.innerHTML = hand.map((sid, idx) => {
     const def = SKILL_DEFS[sid as keyof typeof SKILL_DEFS];
     if (!def) return '';
@@ -695,6 +687,14 @@ export function createBattleScene(
 
   function onShoot() {
     if (!isMyTurn() || state.phase !== 'pre_shot') return;
+    // Apply selected skill cards before entering charging phase
+    for (const idx of [...selectedCards].sort((a, b) => b - a)) {
+      const next = applyUseSkill(state, idx);
+      if (!next) continue;
+      channel.send({ type: 'USE_SKILL', handIdx: idx, resultState: next });
+      state = next;
+    }
+    selectedCards = [];
     state = { ...state, phase: 'charging' };
   }
 
@@ -711,14 +711,6 @@ export function createBattleScene(
 
   function onFire() {
     if (!isMyTurn() || state.phase !== 'charging') return;
-    // Apply selected skill cards (descending index to avoid hand-shift issues)
-    for (const idx of [...selectedCards].sort((a, b) => b - a)) {
-      const next = applyUseSkill(state, idx);
-      if (!next) continue;
-      channel.send({ type: 'USE_SKILL', handIdx: idx, resultState: next });
-      state = next;
-    }
-    selectedCards = [];
     const next = applyFire(state, powerVal, barrelAngle);
     if (next.projectiles.length === 0) return;
     channel.send({ type: 'FIRE', projectiles: next.projectiles });
@@ -778,7 +770,7 @@ export function createBattleScene(
     const pos = selectedCards.indexOf(idx);
     if (pos >= 0) selectedCards.splice(pos, 1);
     else selectedCards.push(idx);
-    _skillsSelSig = ''; // invalidate cache so renderSkills re-renders immediately next frame
+    // no cache to invalidate — renderSkills re-renders every frame
   }
 
   // ── Game loop ─────────────────────────────────────────────────────
