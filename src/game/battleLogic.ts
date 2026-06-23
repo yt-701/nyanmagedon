@@ -119,6 +119,20 @@ function carveCircle(terrain: number[], cx: number, cy: number, r: number): void
   }
 }
 
+// Tunnel carve: like carveCircle but skips columns where bullet is above surface
+// (prevents carving into uphill slopes adjacent to the bullet's path)
+function carveTunnel(terrain: number[], cx: number, cy: number, r: number): void {
+  const r2 = r * r;
+  const x0 = Math.max(0, Math.ceil(cx - r));
+  const x1 = Math.min(960, Math.floor(cx + r));
+  for (let x = x0; x <= x1; x++) {
+    if (cy < terrain[x] - 2) continue; // bullet is above this column's surface — skip
+    const dx   = x - cx;
+    const newY = cy + Math.sqrt(r2 - dx * dx);
+    if (newY > terrain[x]) terrain[x] = Math.min(newY, VOID_Y);
+  }
+}
+
 export function applyExplosion(terrain: number[], hitX: number, hitY: number, radius: number): number[] {
   const next = terrain.slice();
   // Seed with impact coords for determinism across both tabs
@@ -411,14 +425,14 @@ export function tickProjectile(
       continue;
     }
 
-    // Penetrating: carve terrain while underground
+    // Penetrating: carve terrain while underground (only where bullet is actually below surface)
     if (p.penetrating && ny > tY - 2) {
       const next2 = terrain.slice();
-      carveCircle(next2, nx, ny, p.bigExplosion ? 22 : 14);
+      carveTunnel(next2, nx, ny, p.bigExplosion ? 20 : 12);
       terrain = next2;
     }
 
-    const outOfBounds = nx < -60 || nx > 1020;
+    const outOfBounds = nx < -60 || nx > 1020 || ny >= VOID_Y;
     const hitGround   = !p.penetrating && ny > tY + 5;
 
     if (outOfBounds || hitGround) {
