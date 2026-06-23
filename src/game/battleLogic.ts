@@ -411,6 +411,13 @@ export function tickProjectile(
       continue;
     }
 
+    // Penetrating: carve terrain while underground
+    if (p.penetrating && ny > tY - 2) {
+      const next2 = terrain.slice();
+      carveCircle(next2, nx, ny, p.bigExplosion ? 22 : 14);
+      terrain = next2;
+    }
+
     const outOfBounds = nx < -60 || nx > 1020;
     const hitGround   = !p.penetrating && ny > tY + 5;
 
