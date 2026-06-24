@@ -105,9 +105,10 @@ function tunnelPlatformSurface(p: FloatingPlatform, cx: number, cy: number, half
   const surf = [...p.surface];
   for (let x = x0; x <= x1; x++) {
     const i = x - p.x;
-    if (cy <= surf[i]) continue; // not underground at this column
-    const newY = cy + depth;
-    if (newY > surf[i]) surf[i] = Math.min(newY, VOID_Y);
+    const s = surf[i];
+    if (cy <= s) continue;
+    if (cy - s > depth) continue; // surface too far above — preserve
+    surf[i] = Math.min(cy + depth, VOID_Y);
   }
   return { ...p, surface: surf };
 }
@@ -159,15 +160,17 @@ function carveCircle(terrain: number[], cx: number, cy: number, r: number): void
   }
 }
 
-// Tunnel carve: rectangular cross-section, only where bullet is STRICTLY underground.
-// No horizontal spreading beyond halfW — prevents carving adjacent slopes the bullet didn't enter.
+// Tunnel carve: only where bullet is underground AND surface is within `depth` px of bullet.
+// If the surface is farther than `depth` above the bullet, the column is preserved —
+// this prevents the bullet from erasing tall hills it passes deep under.
 function carveTunnel(terrain: number[], cx: number, cy: number, halfW: number, depth: number): void {
   const x0 = Math.max(0, Math.round(cx - halfW));
   const x1 = Math.min(960, Math.round(cx + halfW));
   for (let x = x0; x <= x1; x++) {
-    if (cy <= terrain[x]) continue; // not underground at this column — skip
-    const newY = cy + depth;
-    if (newY > terrain[x]) terrain[x] = Math.min(newY, VOID_Y);
+    const surf = terrain[x];
+    if (cy <= surf) continue;          // not underground here
+    if (cy - surf > depth) continue;   // surface too far above bullet — preserve it
+    terrain[x] = Math.min(cy + depth, VOID_Y);
   }
 }
 
